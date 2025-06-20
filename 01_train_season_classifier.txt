@@ -1,0 +1,108 @@
+# season 분류기 전체 학습 코드 정리
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.model_selection import train_test_split
+from google.colab import drive
+drive.mount('/content/drive')
+import pandas as pd
+import numpy as np
+
+#1. 데이터 로드 및 정리 & 데이터 20개~ 100개 일 때(적을 때)
+
+file_path = '/content/drive/MyDrive/졸업논문/강원도_관광지_20_예시.xlsx'
+df = pd.read_excel(file_path)
+df_season = df[['description', 'season']].dropna()
+
+
+
+#2. 입력(X), 출력(Y) 분리
+X = df_season['description']
+y = df_season['season']
+
+#3. TF-IDF 벡터화
+vectorizer = TfidfVectorizer(max_features = 300)
+X_vec = vectorizer.fit_transform(X)
+
+#4. season 레이블 인코딩
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+
+#5. 학습/테스트 분할
+X_train, X_test, y_train, y_test = train_test_split(X_vec, y_encoded, test_size=0.2, random_state=42)
+
+#6. 분류기 학습
+clf = LogisticRegression(max_iter=1000)
+clf.fit(X_train, y_train)
+
+#7. 예측 및 평가
+y_pred = clf.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+
+#8. 테스트셋에 실제 등장한 클래스 기준 리포트
+predicted_labels = np.unique(y_pred)
+predicted_class_names = label_encoder.inverse_transform(predicted_labels)
+
+report = classification_report(
+    y_test, y_pred, labels = predicted_labels, target_names = predicted_class_names
+)
+# 결과 출력
+print("정확도: " + str(accuracy * 100) + "%")
+print(report)
+
+# season 분류기 전체 학습 코드 정리
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.pipeline import make_pipeline
+import numpy as np
+drive.mount('/content/drive')
+
+
+#1. 데이터 로드 및 정리 & 데이터 1000개 이상
+
+file_path = '/content/drive/MyDrive/졸업논문/강원도_관광지_20_예시.xlsx'
+df = pd.read_excel(file_path)
+df_season = df[['description', 'season']].dropna()
+
+#2. 입력(X), 출력(y)
+X = df_season['description']
+y = df_season['season']
+
+#3. 라벨 인코딩
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+
+#4. 파이프라인: TF-IDF + 로지스틱 회귀
+model = make_pipeline(
+    TfidfVectorizer(max_features=500),
+    LogisticRegression(max_iter=1000)
+)
+
+#5. StratifiedKFold로 5-Fold 교차검증 수행
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+cv_scores = cross_val_score(model, X, y_encoded, cv=skf, scoring='accuracy')
+
+# 평균 및 표준편차 출력
+cv_mean = np.mean(cv_scores)
+cv_std = np.std(cv_scores)
+
+cv_mean, cv_std, cv_scores
+
+import joblib
+
+# 1. 벡터라이저 저장 (처음 1번만 저장하면 됨)
+joblib.dump(vectorizer, '/content/drive/MyDrive/졸업논문/tfidf_vectorizer.pkl')
+
+# 2. 분류기 모델 저장
+joblib.dump(clf, '/content/drive/MyDrive/졸업논문/season_model.pkl')
+
+# 3. 인코더 저장
+joblib.dump(label_encoder, '/content/drive/MyDrive/졸업논문/season_encoder.pkl')
+
+print("✅ season 관련 모델, 인코더, 벡터라이저 저장 완료!")
+

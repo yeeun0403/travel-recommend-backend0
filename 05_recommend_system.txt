@@ -1,0 +1,396 @@
+def recommend_places(user_input, tfidf_vectorizer, season_model, nature_model, vibe_model, target_model, df, top_n=3):
+    # 1. 사용자 입력을 하나의 문자열로 합침
+    combined_input = ' '.join([
+        user_input['season']] +
+        user_input['nature'] +
+        user_input['vibe'] +
+        user_input['target']
+    )
+     # 2. TF-IDF 벡터화
+    user_vec = tfidf_vectorizer.transform([combined_input])
+
+    # 3. 각 모델에서 예측
+    season_pred = season_model.predict(user_vec)
+    nature_pred = nature_model.predict(user_vec)
+    vibe_pred = vibe_model.predict(user_vec)
+    target_pred = target_model.predict(user_vec)
+
+    # 4. 유사도 점수 계산: 관광지 description을 벡터화
+    place_vecs = tfidf_vectorizer.transform(df['description'])
+
+    scores = []
+    for i in range(len(df)):
+        score = 0
+        place_row = df.iloc[i]
+
+        # season 비교
+        score += int(place_row['season'] == user_input['season'])
+
+        # nature, vibe, target: 겹치는 태그 수
+        for key, pred in zip(['nature', 'vibe', 'target'], [nature_pred, vibe_pred, target_pred]):
+            pred_tags = [tag for tag, val in zip(df.columns, pred[0]) if val == 1]
+            actual_tags = place_row[key].split(',')
+            overlap = len(set(pred_tags) & set(actual_tags))
+            score += overlap
+
+        scores.append((i, score))
+
+    # 5. Top-N 점수 높은 관광지 출력
+    top_indices = sorted(scores, key=lambda x: x[1], reverse=True)[:top_n]
+    recommendations = df.iloc[[idx for idx, _ in top_indices]]
+    return recommendations[['name', 'city', 'description']]
+
+# !pip install ace_tools
+# !pip install matplotlib-venn
+# !apt-get -qq install -y libfluidsynth1
+# !apt-get -qq install -y libarchive-dev && pip install -U libarchive
+# import libarchive
+# !apt-get -qq install -y graphviz && pip install pydot
+# import pydot
+# !pip install cartopy
+# import cartopy
+
+# 런타임 초기화로 모든 변수 재정의 필요
+# 다시 필요한 패키지 및 파일 불러오기
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.pipeline import make_pipeline
+from google.colab import drive
+drive.mount('/content/drive')
+# 데이터 불러오기
+file_path = '/content/drive/MyDrive/졸업논문/강원도_관광지_20_예시.xlsx'
+df = pd.read_excel(file_path)
+
+# TF-IDF 벡터라이저 학습 (description 기반)
+tfidf_vectorizer = TfidfVectorizer(max_features=1000)
+X_all = tfidf_vectorizer.fit_transform(df['description'])
+
+# season 단일 분류기 학습
+le_season = LabelEncoder()
+y_season = le_season.fit_transform(df['season'])
+# Removed TfidfVectorizer from season_model pipeline
+season_model = LogisticRegression(max_iter=1000)
+season_model.fit(X_all, y_season)
+
+# nature 분류기 학습
+df['nature'] = df['nature'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+mlb_nature = MultiLabelBinarizer()
+y_nature = mlb_nature.fit_transform(df['nature'])
+nature_model = OneVsRestClassifier(LogisticRegression(max_iter=1000))
+nature_model.fit(X_all, y_nature)
+
+# vibe 분류기 학습
+df['vibe'] = df['vibe'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+mlb_vibe = MultiLabelBinarizer()
+y_vibe = mlb_vibe.fit_transform(df['vibe'])
+vibe_model = OneVsRestClassifier(LogisticRegression(max_iter=1000))
+vibe_model.fit(X_all, y_vibe)
+
+# target 분류기 학습
+df['target'] = df['target'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+mlb_target = MultiLabelBinarizer()
+y_target = mlb_target.fit_transform(df['target'])
+target_model = OneVsRestClassifier(LogisticRegression(max_iter=1000))
+target_model.fit(X_all, y_target)
+
+# 추천 함수 정의
+def recommend_places(user_input, tfidf_vectorizer, season_model, nature_model, vibe_model, target_model, df, top_n=3):
+    combined_input = ' '.join([
+        user_input['season']] +
+        user_input['nature'] +
+        user_input['vibe'] +
+        user_input['target']
+    )
+    user_vec = tfidf_vectorizer.transform([combined_input])
+    # Pass the already vectorized input to the season_model
+    season_pred = season_model.predict(user_vec)
+    nature_pred = nature_model.predict(user_vec)
+    vibe_pred = vibe_model.predict(user_vec)
+    target_pred = target_model.predict(user_vec)
+
+    place_vecs = tfidf_vectorizer.transform(df['description'])
+    scores = []
+    for i in range(len(df)):
+        score = 0
+        place_row = df.iloc[i]
+        score += int(place_row['season'] == user_input['season'])
+        for key, pred, col, mlb in zip(
+            ['nature', 'vibe', 'target'],
+            [nature_pred, vibe_pred, target_pred],
+            ['nature', 'vibe', 'target'],
+            [mlb_nature, mlb_vibe, mlb_target]
+        ):
+            pred_tags = [tag for tag, val in zip(mlb.classes_, pred[0]) if val == 1]
+            actual_tags = place_row[col]
+            overlap = len(set(pred_tags) & set(actual_tags))
+            score += overlap
+        scores.append((i, score))
+    top_indices = sorted(scores, key=lambda x: x[1], reverse=True)[:top_n]
+    recommendations = df.iloc[[idx for idx, _ in top_indices]]
+    return recommendations[['name', 'city', 'description']]
+
+# 사용자 입력 예시
+user_input = {
+    "season": "여름",
+    "nature": ["바다", "자연"],
+    "vibe": ["감성", "산책"],
+    "target": ["연인"]
+}
+
+# 추천 실행
+# 추천 결과 출력
+recommendations = recommend_places(
+    user_input=user_input,
+    tfidf_vectorizer=tfidf_vectorizer,
+    season_model=season_model,
+    nature_model=nature_model,
+    vibe_model=vibe_model,
+    target_model=target_model,
+    df=df,
+    top_n=3
+)
+
+# 결과 보기
+print("🎯 추천된 관광지 목록:")
+display(recommendations[['name', 'city', 'description']])
+
+import pandas as pd
+import joblib
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.linear_model import LogisticRegression
+
+# 파일 경로
+file_path = '/content/drive/MyDrive/졸업논문/강원도_관광지_20_예시.xlsx'
+df = pd.read_excel(file_path)
+
+# TF-IDF 벡터라이저 로딩
+vectorizer = joblib.load('/content/drive/MyDrive/졸업논문/tfidf_vectorizer.pkl')
+X_vec = vectorizer.transform(df['description'])
+
+# 사용자 입력 (예시)
+user_input = {
+    'season': '가을',
+    'nature': '산',
+    'vibe': '한적한',
+    'target': '연인'
+}
+
+# 모델 및 인코더 불러오기
+models = {
+    'season': joblib.load('/content/drive/MyDrive/졸업논문/season_model.pkl'),
+    'nature': joblib.load('/content/drive/MyDrive/졸업논문/nature_model.pkl'),
+    'vibe': joblib.load('/content/drive/MyDrive/졸업논문/vibe_model.pkl'),
+    'target': joblib.load('/content/drive/MyDrive/졸업논문/target_model.pkl'),
+}
+encoders = {
+    'season': joblib.load('/content/drive/MyDrive/졸업논문/season_encoder.pkl'),
+    'nature': joblib.load('/content/drive/MyDrive/졸업논문/nature_encoder.pkl'),
+    'vibe': joblib.load('/content/drive/MyDrive/졸업논문/vibe_encoder.pkl'),
+    'target': joblib.load('/content/drive/MyDrive/졸업논문/target_encoder.pkl'),
+}
+
+# **Fit the loaded models with the data before making predictions**
+# Assuming you have the target variables for nature, vibe, and target available
+# Based on the previous cell, it seems you have the processed target variables y_nature, y_vibe, y_target
+# You would need to load or regenerate these as well if they are not part of the saved models/encoders
+# For demonstration, let's assume y_nature, y_vibe, y_target are available from previous steps or loaded from files.
+# If not, you would need to add code to generate them here.
+
+# Example of how to generate y_nature, y_vibe, y_target if not loaded:
+# df['nature'] = df['nature'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+# mlb_nature = MultiLabelBinarizer()
+# y_nature = mlb_nature.fit_transform(df['nature'])
+# df['vibe'] = df['vibe'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+# mlb_vibe = MultiLabelBinarizer()
+# y_vibe = mlb_vibe.fit_transform(df['vibe'])
+# df['target'] = df['target'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+# mlb_target = MultiLabelBinarizer()
+# y_target = mlb_target.fit_transform(df['target'])
+
+
+# Since the previous cell re-generated these, we can assume they are available in the environment
+# if the notebook is run sequentially. If running this cell in isolation, you'd need to load/generate them.
+
+# Fit the loaded models:
+# models['season'].fit(X_vec, encoders['season'].transform(df['season'])) # Season model is LogisticRegression
+# models['nature'].fit(X_vec, y_nature) # Assuming y_nature is available
+# models['vibe'].fit(X_vec, y_vibe)   # Assuming y_vibe is available
+# models['target'].fit(X_vec, y_target) # Assuming y_target is available
+
+# NOTE: If you saved the fitted models, you don't need to fit them again.
+# The error suggests they were not fitted *after loading*.
+# A better approach is to save the *fitted* models.
+# Let's assume the models saved were unfitted, and fit them here:
+# If your saved models were already fitted, you should remove these fit lines.
+# Based on the error, it seems the loaded models need fitting.
+
+# To make this cell runnable independently, let's regenerate the target variables and fit the models
+# This mirrors the process in the successful cell `rEt6iSdYmvvV` but uses the loaded models.
+
+df['season'] = df['season'].astype(str) # Ensure season is string
+df['nature'] = df['nature'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+df['vibe'] = df['vibe'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+df['target'] = df['target'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+
+# Regenerate encoders and target variables for fitting
+le_season = LabelEncoder()
+y_season = le_season.fit_transform(df['season'])
+
+mlb_nature = MultiLabelBinarizer()
+y_nature = mlb_nature.fit_transform(df['nature'])
+
+mlb_vibe = MultiLabelBinarizer()
+y_vibe = mlb_vibe.fit_transform(df['vibe'])
+
+mlb_target = MultiLabelBinarizer()
+y_target = mlb_target.fit_transform(df['target'])
+
+# Fit the loaded models with the data
+models['season'].fit(X_vec, y_season)
+models['nature'].fit(X_vec, y_nature)
+models['vibe'].fit(X_vec, y_vibe)
+models['target'].fit(X_vec, y_target)
+
+
+# 각 분류기에서 확률 예측
+weights = {
+    'season': 1.0,
+    'nature': 1.0,
+    'vibe': 1.0,
+    'target': 1.0
+}
+
+total_scores = np.zeros(X_vec.shape[0])
+
+for key in ['season', 'nature', 'vibe', 'target']:
+    model = models[key]
+    encoder = encoders[key]
+    # For multi-label models (nature, vibe, target), the encoder is MultiLabelBinarizer
+    # We need to find the column index for the user input tag(s) in the binarized output
+    if key in ['nature', 'vibe', 'target']:
+        # For multi-label, user_input[key] can be a list of tags
+        # We need to find the indices of these tags in the mlb.classes_
+        user_tags = [user_input[key]] if isinstance(user_input[key], str) else user_input[key]
+        tag_indices = [i for i, tag in enumerate(encoder.classes_) if tag in user_tags]
+        if tag_indices:
+            # Sum probabilities for all matched tags in multi-label case
+            probas = np.sum(model.predict_proba(X_vec)[:, tag_indices], axis=1)
+        else:
+            # If no matching tag, probabilities are zero
+            probas = np.zeros(X_vec.shape[0])
+    else: # For single-label model (season)
+        label_index = encoder.transform([user_input[key]])[0]
+        probas = model.predict_proba(X_vec)[:, label_index]
+
+    total_scores += weights[key] * probas
+
+# Top-N 관광지 추천
+df['추천점수'] = total_scores
+recommendations = df.sort_values(by='추천점수', ascending=False).head(3)
+
+# 결과 출력
+print("🔍 사용자 입력:", user_input)
+print("🎯 추천 결과:")
+display(recommendations[['name', '추천점수']])
+
+import pandas as pd
+import numpy as np
+import joblib
+from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer # Import necessary classes
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.linear_model import LogisticRegression
+
+# 경로 설정
+base_path = '/content/drive/MyDrive/졸업논문/'  # Colab에서는 이 경로 유지
+file_path = base_path + '강원도_관광지_20_예시.xlsx'
+
+# 데이터 불러오기
+df = pd.read_excel(file_path)
+
+# TF-IDF 벡터라이저 및 모델 로딩
+vectorizer = joblib.load(base_path + 'tfidf_vectorizer.pkl')
+models = {
+    'season': joblib.load(base_path + 'season_model.pkl'),
+    'nature': joblib.load(base_path + 'nature_model.pkl'),
+    'vibe': joblib.load(base_path + 'vibe_model.pkl'),
+    'target': joblib.load(base_path + 'target_model.pkl'),
+}
+encoders = {
+    'season': joblib.load(base_path + 'season_encoder.pkl'),
+    'nature': joblib.load(base_path + 'nature_encoder.pkl'),
+    'vibe': joblib.load(base_path + 'vibe_encoder.pkl'),
+    'target': joblib.load(base_path + 'target_encoder.pkl'),
+}
+
+# TF-IDF 벡터화
+X_vec = vectorizer.transform(df['description'])
+
+# Prepare target variables for fitting the loaded models
+df['season'] = df['season'].astype(str)
+df['nature'] = df['nature'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+df['vibe'] = df['vibe'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+df['target'] = df['target'].apply(lambda x: [t.strip() for t in str(x).split(',')])
+
+# Regenerate target variables for fitting
+# Note: If the saved models were already fitted, you would not need this step.
+# Based on the error, it seems the loaded models require fitting.
+le_season = LabelEncoder()
+y_season = le_season.fit_transform(df['season'])
+
+mlb_nature = MultiLabelBinarizer()
+y_nature = mlb_nature.fit_transform(df['nature'])
+
+mlb_vibe = MultiLabelBinarizer()
+y_vibe = mlb_vibe.fit_transform(df['vibe'])
+
+mlb_target = MultiLabelBinarizer()
+y_target = mlb_target.fit_transform(df['target'])
+
+
+# Fit the loaded models with the data
+models['season'].fit(X_vec, y_season)
+models['nature'].fit(X_vec, y_nature)
+models['vibe'].fit(X_vec, y_vibe)
+models['target'].fit(X_vec, y_target)
+
+
+# 사용자 입력 예시
+user_input = {
+    'season': '가을',
+    'nature': ['산', '자연'],
+    'vibe': ['감성', '한적한'],
+    'target': ['연인']
+}
+
+# 예측 점수 계산
+weights = {'season': 1.0, 'nature': 1.0, 'vibe': 1.0, 'target': 1.0}
+total_scores = np.zeros(X_vec.shape[0])
+
+for key in ['season', 'nature', 'vibe', 'target']:
+    model = models[key]
+    encoder = encoders[key]
+
+    if key == 'season':
+        label_index = encoder.transform([user_input[key]])[0]
+        probas = model.predict_proba(X_vec)[:, label_index]
+    else:
+        user_tags = [user_input[key]] if isinstance(user_input[key], str) else user_input[key]
+        tag_indices = [i for i, tag in enumerate(encoder.classes_) if tag in user_tags]
+        probas = np.sum(model.predict_proba(X_vec)[:, tag_indices], axis=1) if tag_indices else np.zeros(X_vec.shape[0])
+
+    total_scores += weights[key] * probas
+
+# Top-3 관광지 추천
+df['추천점수'] = total_scores
+recommendations = df.sort_values(by='추천점수', ascending=False).head(3)[['name', 'city', 'description', '추천점수']]
+
+# 결과 출력
+print("🎯 추천된 관광지 Top 3")
+print(recommendations.to_string(index=False))
+
+
