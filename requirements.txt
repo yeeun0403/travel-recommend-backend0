@@ -1,8 +1,6 @@
-setuptools>=68.2.2
-wheel
-pip==23.2.1
-setuptools==68.0.0
+setuptools==68.2.2
 wheel==0.40.0
+pip==23.2.1
 Flask==3.1.1
 flask-cors==6.0.1
 joblib==1.5.1
