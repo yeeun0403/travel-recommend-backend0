@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: travel-recommend-backend
-    env: python
-    pythonVersion: 3.10.12
-    buildCommand: |
-      pip install --upgrade pip setuptools wheel
-      pip install -r requirements.txt
-    startCommand: gunicorn app:app
