@@ -14,7 +14,7 @@ from user_utils import get_user_by_username, username_exists, email_exists, user
 
 
 app = Flask(__name__)
-CORS(app) # 프론트에서 접근 가능하게 허용
+CORS(app) # 프론트에서 접근 가능하게 허용(모든 도메인 허용 - 개발용)
 app.config.from_object(Config)
 
 #초기화
@@ -22,7 +22,7 @@ db.init_app(app)
 jwt = JWTManager(app)
 
 # 회원가입
-@app.route('/api/signup', methods=['POST'])
+@app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
     username = data.get('username')
@@ -44,7 +44,7 @@ def signup():
     
 
 # 로그인
-@app.route('/api/login', methods=['POST'])
+@app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
@@ -69,10 +69,17 @@ def mypage():
     return jsonify({'message': f'{current_user}님의 마이페이지입니다!'})
 
 
+# 모델 관련 라이브러리
+import joblib
+import os
 
-# 여행지 추천 출력
-# CSV 파일 읽어오기
-place_df = pd.read_csv("강원도_관광지_20_예시.csv")
+
+# 학습된 모델 불러오기
+vectorizer = joblib.load("models/tfidf_vectorizer.pkl")
+season_model = joblib.load("models/season_model.pkl")
+nature_model = joblib.load("models/nature_model.pkl")
+vibe_model = joblib.load("models/vibe_model.pkl")
+target_model = joblib.load("models/target_model.pkl")
 
 
 # 서버 링크 검색 시 나오는 문장
@@ -80,43 +87,87 @@ place_df = pd.read_csv("강원도_관광지_20_예시.csv")
 def home():
     return '서버 잘 작동 중입니다.'
 
+BASE = os.path.dirname(__file__) # app.py의 절대 경로 기준으로 디렉토리 반환
+def model_path(name): 
+    return os.path.join(BASE, "models", name)
+
+try:
+    # 학습된 모델 불러오기
+    vectorizer = joblib.load("models/tfidf_vectorizer.pkl")
+    season_model = joblib.load("models/season_model.pkl")
+    nature_model = joblib.load("models/nature_model.pkl")
+    vibe_model = joblib.load("models/vibe_model.pkl")
+    target_model = joblib.load("models/target_model.pkl")
+
+
+except Exception as e:
+    print("모델 로드 실패:", e)
+    # raise를 하면 모델 로드 실패 시 앱 중단, raise X 시 서버 계속 동작
+
 @app.route('/recommend', methods=['POST'])
 def recommend():
-    data = request.get_json()
-    tags = data.get("tags", [])
-
-    # 선택된 태그가 없을 시 출력
-    if not tags:
-        return jsonify({"result": [], "message": "태그를 선택해주세요."})
-
-    #추천 결과를 담을 리스트
-    results = []
-
+    if not vectorizer or not season_model:
+        return jsonify({"error": "모델이 로드되지 않아 추천을 제공할 수 없음"}), 500
     
-    for _, row in place_df.iterrows():
-        row_tags = []
-        for col in ['tags', 'season', 'nature', 'vibe', 'target']:
-            if pd.notna(row[col]):
-                # 쉼표+띄어쓰기로 구분해서 리스트로 만들기
-                row_tags.extend([t.strip() for t in row[col].split(",")])
+    data = request.get_json(silent=True)
+    if not data or 'description' not in data:
+        return jsonify({"error":"description 필드가 필요함"}), 400
+    
+    user_input = data['description', '']
+    
+    try:
+        X = vectorizer.transform([user_input])
+        season = season_model.predict(X)[0]
+        nature = nature_model.predict(X)[0]
+        vibe = vibe_model.predict(X)[0]
+        target = target_model.predict(X)[0]
+        
+        return jsonify({
+            "season": season,
+            "nature": nature,
+            "vibe": vibe,
+            "target": target
+        })
+    except Exception as e:
+        return jsonify({"error": "예측 실패", "detail": str(e)}), 500
 
-        # 중복 제거
-        row_tags = list(set(row_tags))
 
-        # 사용자가 선택한 태그 중 하나라도 포함되어 있으면 추천
-        if any(tag in row_tags for tag in tags):
-            results.append({
-                "name": row["name"],
-                "city": row["city"],
-                "description": row["description"],
-                "tags": row_tags
-            })
+# 서버가 작동중인 지 확인하기 위함
+@app.route('/health', methods=['GET'])
+def health():
+    # 모델이 정상적으로 로드됐는지도 상태에 포함
+    return jsonify({
+        "status": "ok",
+        "models_loaded": all([vectorizer, season_model, nature_model, vibe_model, target_model])
+    })
 
-    if results:
-        return jsonify({"result": results, "message": "추천 성공"})
+# 별점 등록 및 업데이트
+@app.route('/rating', methods=['POST'])
+def submit_rating():
+    data = request.json
+    user_id = data.get('user_id')
+    travel_id = data.get('travel_id') # 별점 남긴 여행지id
+    score = data.get('score')
+
+    # 필수 데이터 없을 시 오류처리
+    if not all([user_id, travel_id, score]):
+        return jsonify({"error": "Missing data"}), 400
+
+    # 같은 user가 같은 여행지에 준 별점이 있는지 확인
+    rating = Rating.query.filter_by(user_id=user_id, travel_id=travel_id).first()
+
+    # 별점이 있을 시 기존 별점 업데이트
+    if rating:
+        rating.score = score
     else:
-        return jsonify({"result": [], "message": "추천 결과 없음"})
+        rating = Rating(user_id=user_id, travel_id=travel_id, score=score)
+        db.session.add(rating)
+    db.session.commit() # DB에 반영
+    
+    return jsonify({"message": "Rating submitted successfully"})
 
+# 별점 피드백 추가 시
+# @app.route('/rating/feedback', methods=['POST'])
 
 if __name__ == "__main__":
     # 환경변수 설정
