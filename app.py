@@ -16,6 +16,9 @@ import joblib, os
 # MongoDB _id 검색 위해 문자열을 ObjectId로 변환(변환 실패시 에러 반환)
 from bson.objectid import ObjectId
 
+# 여행지 추천 시스템 TravelRecommender 클래스  파일 읽어오기
+from project_root.recommend_module import TravelRecommender
+
 
 # 앱초기화
 app = Flask(__name__)
@@ -90,63 +93,38 @@ def mypage():
     })
 
 
-
-# 학습된 모델 불러오기
-vectorizer = joblib.load("models/tfidf_vectorizer.pkl")
-season_model = joblib.load("models/season_model.pkl")
-nature_model = joblib.load("models/nature_model.pkl")
-vibe_model = joblib.load("models/vibe_model.pkl")
-target_model = joblib.load("models/target_model.pkl")
+# ---------------------------------
+# 여행지 추천 코드
 
 
-# 서버 링크 검색 시 나오는 문장
-@app.route('/')
-def home():
-    return '서버 잘 작동 중입니다.'
+# 경로 설정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # app.py 경로
+recommender = TravelRecommender(base_dir=BASE_DIR)
 
-BASE = os.path.dirname(__file__) # app.py의 절대 경로 기준으로 디렉토리 반환
-def model_path(name): 
-    return os.path.join(BASE, "models", name)
-
-try:
-    # 학습된 모델 불러오기
-    vectorizer = joblib.load("models/tfidf_vectorizer.pkl")
-    season_model = joblib.load("models/season_model.pkl")
-    nature_model = joblib.load("models/nature_model.pkl")
-    vibe_model = joblib.load("models/vibe_model.pkl")
-    target_model = joblib.load("models/target_model.pkl")
-
-
-except Exception as e:
-    print("모델 로드 실패:", e)
-    # raise를 하면 모델 로드 실패 시 앱 중단, raise X 시 서버 계속 동작
+    
 
 @app.route('/recommend', methods=['POST'])
 def recommend():
-    if not vectorizer or not season_model:
-        return jsonify({"error": "모델이 로드되지 않아 추천을 제공할 수 없음"}), 500
-    
-    data = request.get_json(silent=True)
-    if not data or 'description' not in data:
-        return jsonify({"error":"description 필드가 필요함"}), 400
-    
-    user_input = data['description', '']
-    
     try:
-        X = vectorizer.transform([user_input])
-        season = season_model.predict(X)[0]
-        nature = nature_model.predict(X)[0]
-        vibe = vibe_model.predict(X)[0]
-        target = target_model.predict(X)[0]
-        
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "입력 데이터가 없습니다."}), 400
+
+        # 추천 실행 (상위 3개 결과 반환)
+        result = recommender.recommend_places(data, top_k=3)
+
         return jsonify({
-            "season": season,
-            "nature": nature,
-            "vibe": vibe,
-            "target": target
+            "parsed_input": result.get("parsed_input"),
+            "recommendations": result.get("recommendations", [])[:3],
+            "total_places": result.get("total_places")
         })
+    
     except Exception as e:
-        return jsonify({"error": "예측 실패", "detail": str(e)}), 500
+        print("추천 오류:", e)
+        return jsonify({"error": "추천 실패", "detail": str(e)}), 500
+    
+
 
 
 # 서버가 작동중인 지 확인하기 위함
@@ -162,9 +140,11 @@ def health():
         
     return jsonify({
         "status": "ok",
-        "models_loaded": all([vectorizer, season_model, nature_model, vibe_model, target_model]),
-        "db_connected": db_status
+        "db_connected": db_status,
+        "places_loaded": len(recommender.df),
+        "embedding_ready": hasattr(recommender, "place_embeddings")
     })
+
 
 # 별점 등록 및 업데이트
 @app.route('/rating', methods=['POST'])
@@ -205,6 +185,14 @@ def submit_rating():
 
 # 별점 피드백 추가 시
 # @app.route('/rating/feedback', methods=['POST'])
+
+
+# ------------------------------
+# 서버 링크 검색 시 나오는 문장
+@app.route('/')
+def home():
+    return '서버 잘 작동 중입니다.'
+
 
 if __name__ == "__main__":
     # 환경변수 설정
