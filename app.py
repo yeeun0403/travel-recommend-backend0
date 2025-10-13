@@ -1,25 +1,31 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pandas as pd
 from config import Config
 
 # 회원가입, 로그인 관련
-from werkzeug.security import generate_password_hash, check_password_hash
-import jwt, datetime
+import datetime
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 # DB 관련
-from extensions import db
-from user_utils import get_user_by_username, username_exists, email_exists, user_exists, create_user
+from extensions import mongo
+from user_utils import username_exists, email_exists, create_user, get_user_by_username, check_user_password
+
+# 모델 관련 라이브러리
+import joblib, os
+
+# MongoDB _id 검색 위해 문자열을 ObjectId로 변환(변환 실패시 에러 반환)
+from bson.objectid import ObjectId
 
 
+# 앱초기화
 app = Flask(__name__)
 CORS(app) # 프론트에서 접근 가능하게 허용(모든 도메인 허용 - 개발용)
 app.config.from_object(Config)
 
-#초기화
-db.init_app(app) 
+mongo.init_app(app) 
 jwt = JWTManager(app)
+
+    
 
 # 회원가입
 @app.route('/signup', methods=['POST'])
@@ -38,40 +44,51 @@ def signup():
     if email_exists(email):
         return jsonify({'error': '이미 존재하는 이메일입니다.'}), 409
 
-    new_user = create_user(username, email, password)
-    return jsonify({'message': '사용자가 성공적으로 생성되었습니다.',
-                    'user_id': new_user.id}), 201
-    
+    user_id = create_user(username, email, password)
+    return jsonify({'message': '사용자가 성공적으로 생성되었습니다.', 'user_id': user_id}), 201
+
 
 # 로그인
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
-    email = data.get('email')
     password = data.get('password')
+
+    if not username or not password:
+        return jsonify({'error': '아이디와 비밀번호를 입력해주세요.'}), 400
 
     user = get_user_by_username(username)
     
-    if not user or not user.check_password(password):
+    if not user or not check_user_password(user, password):
         return jsonify({'error': '아이디 또는 비밀번호 오류'}), 401
 
-    if user and user.check_password(password):
-        access_token = create_access_token(identity=username)
-        return jsonify({'access_token': access_token}), 200
+    # JWT 발급
+    access_token = create_access_token(identity=str(user['_id']))
+    return jsonify({'access_token': access_token}), 200
 
 
 # 마이페이지(로그인된 사용자만 접근 가능)
 @app.route('/mypage', methods=['GET'])
 @jwt_required()
 def mypage():
-    current_user = get_jwt_identity()
-    return jsonify({'message': f'{current_user}님의 마이페이지입니다!'})
+    try:
+        current_user_id = ObjectId(get_jwt_identity())
+    except:
+        return jsonify({"error": "잘못된 사용자 ID"}), 400
 
+    user = mongo.db.users.find_one({"_id": current_user_id})
+    
+    if not user:
+        return jsonify({"error": "사용자를 찾을 수 없습니다."}), 404
 
-# 모델 관련 라이브러리
-import joblib
-import os
+    return jsonify({
+        "id": str(user['_id']),
+        "username": user['username'],
+        "email": user['email'],
+        "message": f"{user['username']}님의 마이페이지입니다!"
+    })
+
 
 
 # 학습된 모델 불러오기
@@ -136,9 +153,17 @@ def recommend():
 @app.route('/health', methods=['GET'])
 def health():
     # 모델이 정상적으로 로드됐는지도 상태에 포함
+    # DB 연결 상태도 체크
+    try:
+        mongo.db.command("ping")
+        db_status = True
+    except:
+        db_status = False
+        
     return jsonify({
         "status": "ok",
-        "models_loaded": all([vectorizer, season_model, nature_model, vibe_model, target_model])
+        "models_loaded": all([vectorizer, season_model, nature_model, vibe_model, target_model]),
+        "db_connected": db_status
     })
 
 # 별점 등록 및 업데이트
@@ -153,16 +178,28 @@ def submit_rating():
     if not all([user_id, travel_id, score]):
         return jsonify({"error": "Missing data"}), 400
 
+    # ObjectId로 변환(변환 실패시 에러 반환)
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({"error": "잘못된 user_id"}), 400
+
     # 같은 user가 같은 여행지에 준 별점이 있는지 확인
-    rating = Rating.query.filter_by(user_id=user_id, travel_id=travel_id).first()
+    existing_rating = mongo.db.ratings.find_one({"user_id": user_oid, "travel_id": travel_id})
 
     # 별점이 있을 시 기존 별점 업데이트
-    if rating:
-        rating.score = score
+    if existing_rating:
+        mongo.db.ratings.update_one(
+            {"_id": existing_rating["_id"]},
+            {"$set": {"score": score, "updated_at": datetime.datetime.utcnow()}}
+        )
     else:
-        rating = Rating(user_id=user_id, travel_id=travel_id, score=score)
-        db.session.add(rating)
-    db.session.commit() # DB에 반영
+         mongo.db.ratings.insert_one({
+            "user_id": user_oid,
+            "travel_id": travel_id,
+            "score": score,
+            "created_at": datetime.datetime.utcnow()
+        })
     
     return jsonify({"message": "Rating submitted successfully"})
 
