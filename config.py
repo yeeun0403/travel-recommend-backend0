@@ -5,4 +5,5 @@ class Config:
 
     # MongoDB 연결 정보
     # MongoDB에 설정해둔 사용자 계정 정보
-    MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://mongoDB 서버주소:기본포트/사용할 데이터베이스 명'
+    # 'mongodb://mongoDB서버주소:기본포트/사용할데이터베이스명' -> 필요
+    MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/mydatabase') # 임시값
