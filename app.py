@@ -30,6 +30,10 @@ app.config.from_object(Config)
 if "MONGO_URI" in os.environ:
     app.config["MONGO_URI"] = os.environ["MONGO_URI"]
 
+# DB 환경변수 버그확인 코드
+print("DEBUG env MONGO_URI =", os.environ.get("MONGO_URI"))
+print("DEBUG conf MONGO_URI =", app.config.get("MONGO_URI"))
+
 
 mongo.init_app(app) 
 jwt = JWTManager(app)
