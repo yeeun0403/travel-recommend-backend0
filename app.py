@@ -25,9 +25,14 @@ app = Flask(__name__)
 CORS(app) # 프론트에서 접근 가능하게 허용(모든 도메인 허용 - 개발용)
 app.config.from_object(Config)
 
+
+# DB 연동 환경변수
+if "MONGO_URI" in os.environ:
+    app.config["MONGO_URI"] = os.environ["MONGO_URI"]
+
+
 mongo.init_app(app) 
 jwt = JWTManager(app)
-
     
 
 # 회원가입
@@ -132,18 +137,32 @@ def recommend():
 def health():
     # 모델이 정상적으로 로드됐는지도 상태에 포함
     # DB 연결 상태도 체크
+
+    db_ok = False # 기본
+    db_error = None # 기본
+    
     try:
-        mongo.db.command("ping")
-        db_status = True
+        mongo.cx.admin.command("ping")
+        db_ok = True
     except:
-        db_status = False
+        db_error = str(e) # 에러메시지 저
         
+    # 모델 연결 체크
+    places_loaded = len(recommender.df) if getattr(recommender, "df", None) is not None else 0
+    embedding_ready = hasattr(recommender, "place_embeddings")
+
+    # 전체 연결상태 판단
+    overall_ok = db_ok and places_loaded > 0 and embedding_ready # 전부 연결됐을 때
+    status_code = 200 if overall_ok else 503  # 전부 연결 -> 200, 하나라도 연결 안됨 -> 503
+
     return jsonify({
-        "status": "ok",
-        "db_connected": db_status,
-        "places_loaded": len(recommender.df),
-        "embedding_ready": hasattr(recommender, "place_embeddings")
-    })
+        "status": "ok" if overall_ok else "degraded",
+        "db_connected": db_ok,
+        "db_error": db_error if not db_ok else None,
+        "places_loaded": places_loaded,
+        "embedding_ready": embedding_ready
+    }), status_code
+
 
 
 # 별점 등록 및 업데이트
