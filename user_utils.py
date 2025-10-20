@@ -18,14 +18,15 @@ def email_exists(email):
 
 # 사용자 생성
 
-def create_user(username, email, password):
+def create_user(username, email, password, name):
     hashed_pw = generate_password_hash(password)
-    result = mongo.db.users.insert_one({
+    user = {
         "username": username,
         "email": email,
         "password": hashed_pw,
-        "created_at": datetime.datetime.utcnow()
-    })
+        "name" : name
+    }
+    result = mongo.db.users.insert_one(user)
     return str(result.inserted_id)
 
 
@@ -33,3 +34,6 @@ def create_user(username, email, password):
 
 def check_user_password(user, password):
     return check_password_hash(user['password'], password)
+
+
+# travel_id

@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from config import Config
+import pandas as pd
+import numpy as np
 
 # 회원가입, 로그인 관련
 import datetime
@@ -16,8 +18,11 @@ import joblib, os
 # MongoDB _id 검색 위해 문자열을 ObjectId로 변환(변환 실패시 에러 반환)
 from bson.objectid import ObjectId
 
-# 여행지 추천 시스템 TravelRecommender 클래스  파일 읽어오기
-from project_root.recommend_module import TravelRecommender
+# 여행지 추천 시스템 GangwonPlaceRecommender 클래스  파일 읽어오기
+from project_root1.recommend_module import GangwonPlaceRecommender
+
+# 지도URL
+from urllib.parse import quote
 
 
 # 앱초기화
@@ -37,17 +42,27 @@ print("DEBUG conf MONGO_URI =", app.config.get("MONGO_URI"))
 
 mongo.init_app(app) 
 jwt = JWTManager(app)
+
+# 전역 JSON 검사
+@app.before_request
+def enforce_json_for_api():
+    # JSON 바디를 요구하는 엔드포인트만 제한
+    json_required_paths = {"/signup", "/login", "/rating", "/recommend"}
+    if request.path in json_required_paths and request.method == "POST":
+        if not request.is_json:
+            return jsonify({"error": "Content-Type must be application/json"}), 415
     
 
 # 회원가입
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
-    username = data.get('username')
+    username = data.get('username') # 사용자 로그인용 아이디
     email = data.get('email')
     password = data.get('password')
+    name = data.get('name') # 사용자 이름
 
-    if not username or not email or not password:
+    if not username or not email or not password or not name:
         return jsonify({'error': '모든 값을 입력해주세요.'}), 400
     
     if username_exists(username):
@@ -56,7 +71,7 @@ def signup():
     if email_exists(email):
         return jsonify({'error': '이미 존재하는 이메일입니다.'}), 409
 
-    user_id = create_user(username, email, password)
+    user_id = create_user(username, email, password, name)
     return jsonify({'message': '사용자가 성공적으로 생성되었습니다.', 'user_id': user_id}), 201
 
 
@@ -94,12 +109,30 @@ def mypage():
     if not user:
         return jsonify({"error": "사용자를 찾을 수 없습니다."}), 404
 
+    cur = mongo.db.ratings.find({"user_id": current_user_id}).sort("updated_at", -1)
+    ratings = []
+    
+    for r in cur:
+        ratings.append({
+            "_id": str(r["_id"]),
+            "user_id": str(r["user_id"]),
+            "travel_id": r.get("travel_id"),
+            "score": r.get("score"),
+            "feedback_tags": r.get("feedback_tags", []),
+            "created_at": r.get("created_at").isoformat() if r.get("created_at") else None,
+            "updated_at": r.get("updated_at").isoformat() if r.get("updated_at") else None
+        })
+
+
+
     return jsonify({
         "id": str(user['_id']),
         "username": user['username'],
         "email": user['email'],
-        "message": f"{user['username']}님의 마이페이지입니다!"
-    })
+        "message": f"{user['username']}님의 마이페이지입니다!",
+        "ratings": ratings
+    }), 200
+
 
 
 # ---------------------------------
@@ -108,32 +141,100 @@ def mypage():
 
 # 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # app.py 경로
-recommender = TravelRecommender(base_dir=BASE_DIR)
+PROJECT_ROOT = os.path.join(BASE_DIR, "project_root1")
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
+PROCESSED_CSV = os.path.join(PROJECT_ROOT, "data", "processed", "gangwon_places_100_processed.csv")
+EMBEDDING_NPY = os.path.join(PROJECT_ROOT, "data", "embeddings", "place_embeddings_full768.npy")
 
-    
+# 초기
+recommender = GangwonPlaceRecommender(config_path=CONFIG_PATH)
+
+# 모델/ 데이터 로딩
+try:
+    recommender.df = pd.read_csv(PROCESSED_CSV).reset_index(drop=True)
+    recommender.place_embeddings = np.load(EMBEDDING_NPY)
+except Exception as e:
+    print("[WARN] 추천기 초기 로딩 실패:", e)
+
+
+# 지도 URL 자동생성(클릭하면 카카오맵 오픈)
+def build_map_url(name, lat, lng):
+    enc_name = quote(name or "", safe="")
+    return f"https://map.kakao.com/link/map/{enc_name},{lat},{lng}"
+
+
 
 @app.route('/recommend', methods=['POST'])
 def recommend():
     try:
         data = request.get_json()
-
         if not data:
             return jsonify({"error": "입력 데이터가 없습니다."}), 400
 
         # 추천 실행 (상위 3개 결과 반환)
         result = recommender.recommend_places(data, top_k=3)
+        recommendations = result.get("recommendations", [])[:3]
 
+        # travel_id 필수 검증
+        if not all("travel_id" in r and r.get("travel_id") is not None for r in recommendations):
+            return jsonify({"error": "추천 결과에 travel_id가 없습니다. (모델 수정 필요)"}), 500
+
+        # travel_id로 병
+        travel_ids = [r.get("travel_id") for r in recommendations]
+        travel_docs = list(mongo.db.travels.find(
+            {"travel_id": {"$in": travel_ids}},
+            {
+                "_id": 0, "travel_id": 1, "name": 1,
+                "description": 1, "image_url": 1,
+                "latitude": 1, "longitude": 1
+            }
+        ))
+        travel_map = {d["travel_id"]: d for d in travel_docs}
+
+
+        #추천 결과 + 정보 통합
+        enriched = []
+        for rec in recommendations:
+            tid = rec.get("travel_id")
+            doc = travel_map.get(tid)
+            if not doc:
+                continue  # travel_id가 DB에 없으면 스킵(오류 방지)
+
+            lat = doc.get("latitude")
+            lng = doc.get("longitude")
+
+            enriched.append({
+                "travel_id": tid,
+                "name": doc.get("name"),
+                "description": doc.get("description"),
+                "thumbnail": doc.get("image_url"),
+                "location": {"lat": lat, "lng": lng},
+                "map_url": build_map_url(doc.get("name"), lat, lng),
+                "scores": {
+                    "hybrid": rec.get("hybrid_score"),
+                    "similarity": rec.get("similarity_score"),
+                    "tag_match": rec.get("tag_score")
+                }
+            })
+
+
+        # 프론트엔드로 반환
         return jsonify({
-            "parsed_input": result.get("parsed_input"),
-            "recommendations": result.get("recommendations", [])[:3],
-            "total_places": result.get("total_places")
-        })
-    
+            "status": "success",
+            "input": {
+                "raw": data,
+                "parsed": result.get("parsed_input")
+            },
+            "recommendations": enriched,
+            "meta": {
+                "total_places": result.get("total_places"),
+                "count": len(enriched)
+            }
+        }), 200
+
     except Exception as e:
         print("추천 오류:", e)
         return jsonify({"error": "추천 실패", "detail": str(e)}), 500
-    
-
 
 
 # 서버가 작동중인 지 확인하기 위함
@@ -148,7 +249,7 @@ def health():
     try:
         mongo.cx.admin.command("ping")
         db_ok = True
-    except:
+    except Exception as e:
         db_error = str(e) # 에러메시지 저
         
     # 모델 연결 체크
@@ -173,41 +274,68 @@ def health():
 @app.route('/rating', methods=['POST'])
 def submit_rating():
     data = request.json
+    
     user_id = data.get('user_id')
     travel_id = data.get('travel_id') # 별점 남긴 여행지id
     score = data.get('score')
 
+    # 심화: 피드백 기능
+    feedback_tags = data.get('feedback_tags', []) # 태그 리스트
+
+    if not isinstance(feedback_tags, list):
+        feedback_tags = [feedback_tags]
+    
     # 필수 데이터 없을 시 오류처리
     if not all([user_id, travel_id, score]):
-        return jsonify({"error": "Missing data"}), 400
+        return jsonify({"error": "필수 데이터가 누락되었습니다."}), 400
 
-    # ObjectId로 변환(변환 실패시 에러 반환)
+    # score 숫자/범위 체크
+    try:
+        score_f = float(score)
+    except Exception:
+        return jsonify({"error": "별점은 숫자여야 합니다."}), 400            
+    if not (0.0 <= score_f <= 5.0):
+        return jsonify({"error": "별점은 0~5 사이여야 합니다."}), 400
+
+    
+    # ObjectId로 변환
     try:
         user_oid = ObjectId(user_id)
-    except:
-        return jsonify({"error": "잘못된 user_id"}), 400
+    except Exception:
+        return jsonify({"error": "잘못된 user_id 형식입니다."}), 400
 
-    # 같은 user가 같은 여행지에 준 별점이 있는지 확인
-    existing_rating = mongo.db.ratings.find_one({"user_id": user_oid, "travel_id": travel_id})
+    # travel_id 정규화
+    try:
+        travel_id_int = int(travel_id)
+    except Exception:
+        return jsonify({"error": "travel_id는 정수여야 합니다."}), 400
+
+    now = datetime.datetime.utcnow() # 현재 시각 - 코드 간결화
 
     # 별점이 있을 시 기존 별점 업데이트
-    if existing_rating:
-        mongo.db.ratings.update_one(
-            {"_id": existing_rating["_id"]},
-            {"$set": {"score": score, "updated_at": datetime.datetime.utcnow()}}
-        )
-    else:
-         mongo.db.ratings.insert_one({
-            "user_id": user_oid,
-            "travel_id": travel_id,
-            "score": score,
-            "created_at": datetime.datetime.utcnow()
-        })
-    
-    return jsonify({"message": "Rating submitted successfully"})
+    result = mongo.db.ratings.update_one(
+        {"user_id":user_oid, "travel_id": travel_id_int},
+        {
+            "$set": {
+                "score": score_f,
+                "feedback_tags": feedback_tags,
+                "updated_at": now
+            },
+            "$setOnInsert": {"created_at" : now}
+        },
+        upsert=True
+    )
 
-# 별점 피드백 추가 시
-# @app.route('/rating/feedback', methods=['POST'])
+
+    # 별점 구분
+    if result.upserted_id:
+        message = "별점이 새로 등록되었습니다."
+    elif result.modified_count > 0:
+        message = "별점이 성공적으로 수정되었습니다."
+    else:
+        message = "기존 별점과 동일하여 변경되지 않았습니다."
+    
+    return jsonify({"message":message}), 201
 
 
 # ------------------------------
