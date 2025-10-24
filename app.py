@@ -20,6 +20,7 @@ from bson.objectid import ObjectId
 
 # 여행지 추천 시스템 GangwonPlaceRecommender 클래스  파일 읽어오기
 from project_root1.recommend_module import GangwonPlaceRecommender
+from flask_jwt_extended import verify_jwt_in_request
 
 # 지도URL
 from urllib.parse import quote
@@ -134,8 +135,151 @@ def mypage():
     }), 200
 
 
+# ============================================================================
+# 민서님 파트 추가한 부분
 
-# ---------------------------------
+
+# 마이페이지에서 태그 설문조사
+@app.route('/mypage/tags', methods=['POST'])
+@jwt_required()
+def save_user_tags():
+    user_id = get_jwt_identity()
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({"error": "잘못된 사용자 ID"}), 400
+
+    body = request.get_json() or {}
+    tags = body.get("tags", [])
+    if not isinstance(tags, list):
+        return jsonify({"error": "tags must be a list"}), 400
+
+    # 정규화(공백/중복 제거, '#' 제거, 소문자)
+    norm = []
+    seen = set()
+    for t in tags:
+        s = str(t).strip().lstrip("#").lower()
+        if s and s not in seen:
+            seen.add(s)
+            norm.append(s)
+
+    mongo.db.user_tags.update_one(
+        {"user_id": user_oid},
+        {"$set": {"tags": norm, "updated_at": datetime.datetime.utcnow()}},
+        upsert=True
+    )
+    return jsonify({"user_id": user_id, "tags": norm}), 200
+
+
+# 마이페이지에서 설문한 태그 확인
+@app.route('/mypage/tags', methods=['GET'])
+@jwt_required()
+def get_user_tags():
+    user_id = get_jwt_identity()
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({"error": "잘못된 사용자 ID"}), 400
+
+    doc = mongo.db.user_tags.find_one({"user_id": user_oid}, {"_id": 0, "tags": 1})
+    return jsonify({"user_id": user_id, "tags": doc.get("tags", []) if doc else []}), 200
+
+
+# 추천 받은 여행지 북마크할 때 호출
+@app.route('/mypage/bookmarks/<int:travel_id>', methods=['POST'])
+@jwt_required()
+def toggle_bookmark(travel_id):
+    user_id = get_jwt_identity()
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({"error": "잘못된 사용자 ID"}), 400
+
+    existing = mongo.db.bookmarks.find_one({"user_id": user_oid, "travel_id": travel_id})
+    if existing:
+        mongo.db.bookmarks.delete_one({"_id": existing["_id"]})
+        return jsonify({"status": "unbookmarked", "travel_id": travel_id}), 200
+    else:
+        mongo.db.bookmarks.insert_one({
+            "user_id": user_oid,
+            "travel_id": travel_id,
+            "tags": [],  # 초기엔 태그 없음
+            "created_at": datetime.datetime.utcnow()
+        })
+        return jsonify({"status": "bookmarked", "travel_id": travel_id}), 201
+
+
+# 북마크 한 여행지 목록 확
+@app.route('/mypage/bookmarks', methods=['GET'])
+@jwt_required()
+def list_my_bookmarks():
+    user_id = get_jwt_identity()
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({"error": "잘못된 사용자 ID"}), 400
+
+    # bookmarks 조인: travels에서 메타 가져오기
+    bs = list(mongo.db.bookmarks.find({"user_id": user_oid}))
+    travel_ids = [b["travel_id"] for b in bs]
+    travel_docs = list(mongo.db.travels.find(
+        {"travel_id": {"$in": travel_ids}},
+        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "latitude": 1, "longitude": 1}
+    ))
+    tmap = {t["travel_id"]: t for t in travel_docs}
+
+    items = []
+    for b in bs:
+        meta = tmap.get(b["travel_id"], {})
+        items.append({
+            "travel_id": b["travel_id"],
+            "name": meta.get("name"),
+            "thumbnail": meta.get("image_url"),
+            "location": {"lat": meta.get("latitude"), "lng": meta.get("longitude")},
+            "my_tags": b.get("tags", []),
+            "bookmarked_at": b.get("created_at").isoformat() if b.get("created_at") else None
+        })
+    return jsonify({"bookmarks": items, "count": len(items)}), 200
+
+
+# 북마크한 여행지에 사용자가 태그 추가
+@app.route('/mypage/bookmarks/<int:travel_id>/tags', methods=['POST'])
+@jwt_required()
+def save_bookmark_tags(travel_id):
+    user_id = get_jwt_identity()
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({"error": "잘못된 사용자 ID"}), 400
+
+    body = request.get_json() or {}
+    tags = body.get("tags", [])
+    if not isinstance(tags, list):
+        return jsonify({"error": "tags must be a list"}), 400
+
+    # 정규화
+    norm, seen = [], set()
+    for t in tags:
+        s = str(t).strip().lstrip("#").lower()
+        if s and s not in seen:
+            seen.add(s)
+            norm.append(s)
+
+    # 내 북마크인지 확인
+    bk = mongo.db.bookmarks.find_one({"user_id": user_oid, "travel_id": travel_id})
+    if not bk:
+        return jsonify({"error": "해당 여행지는 북마크되어 있지 않습니다."}), 404
+
+    mongo.db.bookmarks.update_one(
+        {"_id": bk["_id"]},
+        {"$set": {"tags": norm}}
+    )
+    return jsonify({"travel_id": travel_id, "my_tags": norm}), 200
+
+
+
+
+# ==================================================================================
 # 여행지 추천 코드
 
 
@@ -167,12 +311,45 @@ def build_map_url(name, lat, lng):
 @app.route('/recommend', methods=['POST'])
 def recommend():
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "입력 데이터가 없습니다."}), 400
+        data = request.get_json(silent=True) or {} # body가 비어도 설문으로 추천 가능하게 허용
+
+        # 현재 로그인 유저 확인
+        user_id = None
+        try:
+            verify_jwt_in_request(optional=True)  # 인증 헤더 없어도 예외 안 냄
+            user_id = get_jwt_identity()
+        except Exception:
+            user_id = None
+
+        # 설문 태그 로드
+        user_tags = []
+        if user_id:
+            try:
+                doc = mongo.db.user_tags.find_one(
+                    {"user_id": ObjectId(user_id)},
+                    {"_id": 0, "tags": 1}
+                )
+                if doc and doc.get("tags"):
+                    user_tags = doc["tags"]
+            except Exception as e:
+                print("[WARN] user_tags 조회 실패:", e)
+
+        # 입력 분기
+        if user_tags:
+            # 설문 태그를 간단히 nature/vibe/target에 모두 반영
+            data_for_model = {
+                "nature": user_tags,
+                "vibe": user_tags,
+                "target": user_tags
+            }
+        else:
+            # 설문 태그가 없으면 입력 사용
+            if not data:
+                return jsonify({"error": "입력 데이터가 없고 설문 태그도 없습니다."}), 400
+            data_for_model = data
 
         # 추천 실행 (상위 3개 결과 반환)
-        result = recommender.recommend_places(data, top_k=3)
+        result = recommender.recommend_places(data_for_model, top_k=3)
         recommendations = result.get("recommendations", [])[:3]
 
         # travel_id 필수 검증
@@ -223,7 +400,8 @@ def recommend():
             "status": "success",
             "input": {
                 "raw": data,
-                "parsed": result.get("parsed_input")
+                "parsed": result.get("parsed_input"),
+                "mode": "survey" if user_tags else "request" # 태그 설문 or 사용자 입력값
             },
             "recommendations": enriched,
             "meta": {
