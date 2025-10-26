@@ -13,7 +13,7 @@ def username_exists(username):
     return mongo.db.users.find_one({"username": username}) is not None
 
 def email_exists(email):
-    return mongo.db.users.find_one({"email": username}) is not None
+    return mongo.db.users.find_one({"email": email}) is not None
 
 
 # 사용자 생성
