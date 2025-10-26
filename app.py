@@ -6,7 +6,7 @@ import numpy as np
 
 # 회원가입, 로그인 관련
 import datetime
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 
 # DB 관련
 from extensions import mongo
@@ -20,7 +20,6 @@ from bson.objectid import ObjectId
 
 # 여행지 추천 시스템 GangwonPlaceRecommender 클래스  파일 읽어오기
 from project_root1.recommend_module import GangwonPlaceRecommender
-from flask_jwt_extended import verify_jwt_in_request
 
 # 지도URL
 from urllib.parse import quote
@@ -345,8 +344,9 @@ def recommend():
         else:
             # 설문 태그가 없으면 입력 사용
             if not data:
-                return jsonify({"error": "입력 데이터가 없고 설문 태그도 없습니다."}), 400
-            data_for_model = data
+                data_for_model = {"free_text": "강원도 여행"}
+            else:
+                data_for_model = data
 
         # 추천 실행 (상위 3개 결과 반환)
         result = recommender.recommend_places(data_for_model, top_k=3)
