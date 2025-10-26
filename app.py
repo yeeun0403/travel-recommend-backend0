@@ -337,9 +337,8 @@ def recommend():
         if user_tags:
             # 설문 태그를 간단히 nature/vibe/target에 모두 반영
             data_for_model = {
-                "nature": user_tags,
-                "vibe": user_tags,
-                "target": user_tags
+                "description": ", ".join(user_tags),
+                "tags": user_tags
             }
         else:
             # 설문 태그가 없으면 입력 사용
