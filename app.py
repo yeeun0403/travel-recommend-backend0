@@ -308,7 +308,8 @@ def build_map_url(name, lat, lng):
 
 
 @app.route('/recommend', methods=['POST'])
-def recommend():try:
+def recommend():
+    try:
         # 1) 요청 바디(없어도 됨: 설문만으로도 추천)
         body = request.get_json(silent=True) or {}
 
