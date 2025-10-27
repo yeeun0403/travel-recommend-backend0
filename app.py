@@ -287,7 +287,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # app.py 경로
 PROJECT_ROOT = os.path.join(BASE_DIR, "project_root1")
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 PROCESSED_CSV = os.path.join(PROJECT_ROOT, "data", "processed", "gangwon_matching_results_sorted.csv")
-EMBEDDING_NPY = os.path.join(PROJECT_ROOT, "data", "embeddings", "place_embeddings_v2.npy")
+EMBEDDING_NPY = os.path.join(PROJECT_ROOT, "place_embeddings_v2.npy")
 
 # 초기
 recommender = GangwonPlaceRecommender(config_path=CONFIG_PATH)
