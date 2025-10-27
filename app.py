@@ -359,7 +359,7 @@ def recommend():
             mode = "survey"
 
         else:
-            return jsonify({"error": "입력 데이터가 없고 설문 태그도 없습니다."}), 400
+            data_for_model = {}
 
         # 4) 추천 수행
         result = recommender.recommend_places(data_for_model, top_k=3)
