@@ -308,19 +308,18 @@ def build_map_url(name, lat, lng):
 
 
 @app.route('/recommend', methods=['POST'])
-def recommend():
-    try:
-        data = request.get_json(silent=True) or {} # body가 비어도 설문으로 추천 가능하게 허용
+def recommend():try:
+        # 1) 요청 바디(없어도 됨: 설문만으로도 추천)
+        body = request.get_json(silent=True) or {}
 
-        # 현재 로그인 유저 확인
+        # 2) 로그인/설문 로드 (선택적 JWT)
         user_id = None
         try:
-            verify_jwt_in_request(optional=True)  # 인증 헤더 없어도 예외 안 냄
+            verify_jwt_in_request(optional=True)
             user_id = get_jwt_identity()
         except Exception:
             user_id = None
 
-        # 설문 태그 로드
         user_tags = []
         if user_id:
             try:
@@ -333,85 +332,91 @@ def recommend():
             except Exception as e:
                 print("[WARN] user_tags 조회 실패:", e)
 
-        # 입력 분기
-        if user_tags:
-            # 설문 태그를 간단히 nature/vibe/target에 모두 반영
-            data_for_model = {
-                "description": ", ".join(user_tags),
-                "tags": user_tags
-            }
-        else:
-            # 설문 태그가 없으면 입력 사용
-            if not data:
-                data_for_model = {"free_text": "강원도 여행"}
-            else:
-                data_for_model = data
+        # 3) 입력 해석 (우선순위: free_text > tags > 설문 > 명시필드)
+        data_for_model = None
+        if isinstance(body.get("free_text"), str) and body["free_text"].strip():
+            data_for_model = {"free_text": body["free_text"].strip()}
 
-        # 추천 실행 (상위 3개 결과 반환)
+        elif isinstance(body.get("tags"), list) and body["tags"]:
+            # 범용 태그는 nature/vibe/target 동일 반영
+            norm = [str(t).strip().lstrip("#").lower() for t in body["tags"] if str(t).strip()]
+            data_for_model = {"tags": norm}
+
+        elif user_tags:
+            # 설문 태그 사용
+            data_for_model = {"tags": user_tags}
+
+        else:
+            # 명시적 카테고리 입력이 있는 경우 그대로
+            # (없다면 에러 반환)
+            has_any = any(k in body for k in ("season", "nature", "vibe", "target"))
+            if has_any:
+                data_for_model = {
+                    "season": body.get("season"),
+                    "nature": body.get("nature", []),
+                    "vibe": body.get("vibe", []),
+                    "target": body.get("target", []),
+                }
+            else:
+                return jsonify({"error": "입력 데이터가 없고 설문 태그도 없습니다."}), 400
+
+        # 4) 추천 수행
         result = recommender.recommend_places(data_for_model, top_k=3)
         recommendations = result.get("recommendations", [])[:3]
 
-        # travel_id 필수 검증
-        if not all("travel_id" in r and r.get("travel_id") is not None for r in recommendations):
+        # 5) travel_id 필수 검증
+        if not all("travel_id" in r and r["travel_id"] is not None for r in recommendations):
             return jsonify({"error": "추천 결과에 travel_id가 없습니다. (모델 수정 필요)"}), 500
 
-        # travel_id로 병
-        travel_ids = [r.get("travel_id") for r in recommendations]
+        # 6) travel 메타 조인
+        travel_ids = [r["travel_id"] for r in recommendations]
         travel_docs = list(mongo.db.travels.find(
             {"travel_id": {"$in": travel_ids}},
-            {
-                "_id": 0, "travel_id": 1, "name": 1,
-                "description": 1, "image_url": 1,
-                "latitude": 1, "longitude": 1
-            }
+            {"_id": 0, "travel_id": 1, "name": 1, "description": 1, "image_url": 1,
+             "latitude": 1, "longitude": 1}
         ))
-        travel_map = {d["travel_id"]: d for d in travel_docs}
+        tmap = {d["travel_id"]: d for d in travel_docs}
 
+        # 7) enrich
+        def build_map_url(name, lat, lng):
+            from urllib.parse import quote
+            enc = quote(name or "", safe="")
+            return f"https://map.kakao.com/link/map/{enc},{lat},{lng}"
 
-        #추천 결과 + 정보 통합
         enriched = []
         for rec in recommendations:
-            tid = rec.get("travel_id")
-            doc = travel_map.get(tid)
-            if not doc:
-                continue  # travel_id가 DB에 없으면 스킵(오류 방지)
-
-            lat = doc.get("latitude")
-            lng = doc.get("longitude")
-
+            tid = rec["travel_id"]
+            meta = tmap.get(tid, {})
             enriched.append({
                 "travel_id": tid,
-                "name": doc.get("name"),
-                "description": doc.get("description"),
-                "thumbnail": doc.get("image_url"),
-                "location": {"lat": lat, "lng": lng},
-                "map_url": build_map_url(doc.get("name"), lat, lng),
+                "name": meta.get("name") or rec.get("name"),
+                "description": meta.get("description") or rec.get("description"),
+                "thumbnail": meta.get("image_url"),
+                "location": {"lat": meta.get("latitude"), "lng": meta.get("longitude")},
+                "map_url": build_map_url(meta.get("name") or rec.get("name", ""), meta.get("latitude"), meta.get("longitude")),
                 "scores": {
                     "hybrid": rec.get("hybrid_score"),
                     "similarity": rec.get("similarity_score"),
-                    "tag_match": rec.get("tag_score")
+                    "tag_match": rec.get("tag_score"),
                 }
             })
 
+        mode = ("free_text" if body.get("free_text")
+                else "tags" if body.get("tags")
+                else "survey" if user_tags
+                else "explicit")
 
-        # 프론트엔드로 반환
         return jsonify({
             "status": "success",
-            "input": {
-                "raw": data,
-                "parsed": result.get("parsed_input"),
-                "mode": "survey" if user_tags else "request" # 태그 설문 or 사용자 입력값
-            },
+            "input": {"raw": body, "parsed": result.get("parsed_input"), "mode": mode},
             "recommendations": enriched,
-            "meta": {
-                "total_places": result.get("total_places"),
-                "count": len(enriched)
-            }
+            "meta": {"total_places": result.get("total_places"), "count": len(enriched)}
         }), 200
 
     except Exception as e:
         print("추천 오류:", e)
         return jsonify({"error": "추천 실패", "detail": str(e)}), 500
+    
 
 
 # 서버가 작동중인 지 확인하기 위함
