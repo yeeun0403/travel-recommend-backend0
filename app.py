@@ -365,10 +365,14 @@ def recommend():
         result = recommender.recommend_places(data_for_model, top_k=3)
         recs = result.get("recommendations", [])[:3]
 
+        print("[DEBUG] recs raw:", recs)
+
         # 5) travel_id 존재 확인
         recs = [r for r in recs if r.get("travel_id") is not None]
         if not recs:
             return jsonify({"error": "추천 결과에 유효한 travel_id가 없습니다."}), 500
+
+        print("[DEBUG] keys in first rec:", recs[0].keys() if recs else "NO RECS")
 
         # 6) 여행지 메타 조인
         travel_ids = [r["travel_id"] for r in recs]
