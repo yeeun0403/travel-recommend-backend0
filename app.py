@@ -360,6 +360,7 @@ def recommend():
 
         else:
             data_for_model = {}
+            mode = "fallback"
 
         # 4) 추천 수행
         result = recommender.recommend_places(data_for_model, top_k=3)
