@@ -92,14 +92,7 @@ class GangwonPlaceRecommender:
         return sim
 
     def _calc_tag_score_row(self, parsed: Dict, row) -> float:
-        """
-        간단 가중치 방식:
-        - season match: +0.3
-        - nature Jaccard: *0.25
-        - vibe   Jaccard: *0.25
-        - target overlap ratio: *0.2
-        DF의 nature_list / vibe_list / target_list 는 소문자 리스트라고 가정 권장.
-        """
+       
         score = 0.0
 
         # season
