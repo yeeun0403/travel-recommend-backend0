@@ -391,14 +391,19 @@ def recommend():
             if not meta:
                 continue
             enriched.append({
-                "travel_id": meta["travel_id"],
-                "name": meta.get("name"),
+                "travel_id": r["travel_id"],
+                "name": r.get("name"),
                 "thumbnail": meta.get("image_url"),
                 "location": {
                     "lat": meta.get("latitude"),
                     "lng": meta.get("longitude")
                 },
-                "map_url": build_map_url(meta.get("name"), meta.get("latitude"), meta.get("longitude"))
+                "map_url": build_map_url(meta.get("name"), meta.get("latitude"), meta.get("longitude")),
+                "scores": {
+                    "hybrid": r.get("hybrid_score"),
+                    "similarity": r.get("similarity_score"),
+                    "tag_match": r.get("tag_score")
+                }
             })
 
         return jsonify({
