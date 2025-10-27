@@ -320,10 +320,9 @@ def build_map_url(name, lat, lng):
 @app.route('/recommend', methods=['POST'])
 def recommend():
     try:
-        # 1) 요청 바디 (없어도 됨: 설문만으로도 추천 가능)
         body = request.get_json(silent=True) or {}
 
-        # 2) 선택적 JWT (로그인 없어도 동작)
+        # 1) 로그인 유저 확인 (optional)
         user_id = None
         try:
             verify_jwt_in_request(optional=True)
@@ -331,7 +330,7 @@ def recommend():
         except Exception:
             user_id = None
 
-        # 2-1) 설문 태그 로드
+        # 2) 설문 태그(DB)
         user_tags = []
         if user_id:
             try:
@@ -344,119 +343,68 @@ def recommend():
             except Exception as e:
                 print("[WARN] user_tags 조회 실패:", e)
 
-        # sk gptrkfflsl입력 해석 (우선순위: free_text > tags > 설문 > 명시필드)
-        # 'tags'가 오면 nature/vibe/target 모두에 동일 적용 (모델 A 호환)
-        data_for_model = None
-
+        # 3) 입력 우선순위 결정 (A 방식: 설문태그 우선)
+        # - free_text > tags > 설문태그 > 명시필드
         if isinstance(body.get("free_text"), str) and body["free_text"].strip():
             data_for_model = {"free_text": body["free_text"].strip()}
+            mode = "free_text"
 
         elif isinstance(body.get("tags"), list) and body["tags"]:
             norm = [str(t).strip().lstrip("#").lower() for t in body["tags"] if str(t).strip()]
-            data_for_model = {
-                "season": body.get("season"),        # 있으면 사용
-                "nature": norm,
-                "vibe": norm,
-                "target": norm,
-            }
+            data_for_model = {"tags": norm}
+            mode = "tags"
 
         elif user_tags:
-            norm = [str(t).strip().lstrip("#").lower() for t in user_tags if str(t).strip()]
-            data_for_model = {
-                "nature": norm,
-                "vibe": norm,
-                "target": norm,
-            }
+            data_for_model = {"tags": user_tags}
+            mode = "survey"
 
         else:
-            # 명시 카테고리가 있으면 그대로 사용
-            has_any = any(k in body for k in ("season", "nature", "vibe", "target"))
-            if has_any:
-                data_for_model = {
-                    "season": body.get("season"),
-                    "nature": body.get("nature", []),
-                    "vibe": body.get("vibe", []),
-                    "target": body.get("target", []),
-                }
-            else:
-                return jsonify({"error": "입력 데이터가 없고 설문 태그도 없습니다."}), 400
-
-        # 3-1) 디버그: 모델에 들어가는 최종 입력 확인
-        print("[DEBUG] /recommend data_for_model =", data_for_model)
+            return jsonify({"error": "입력 데이터가 없고 설문 태그도 없습니다."}), 400
 
         # 4) 추천 수행
         result = recommender.recommend_places(data_for_model, top_k=3)
-        recommendations = (result.get("recommendations") or [])[:3]
+        recs = result.get("recommendations", [])[:3]
 
-        # 4-1) 디버그: 모델 원시 추천 확인
-        print("[DEBUG] raw model recs =", result.get("recommendations"))
-
-        recommendations = [r for r in recommendations if r.get("travel_id") is not None]
-        if not recommendations:
+        # 5) travel_id 존재 확인
+        recs = [r for r in recs if r.get("travel_id") is not None]
+        if not recs:
             return jsonify({"error": "추천 결과에 유효한 travel_id가 없습니다."}), 500
 
-        # 5) travel_id 필수 검증 (빈/None 제거)
-        cleaned = [r for r in recommendations if r.get("travel_id") is not None]
-        if not cleaned:
-            # 원인 추적용 추가 로그
-            print("[ERROR] no valid travel_id in model recs. keys of first item:",
-                  list(recommendations[0].keys()) if recommendations else "[]")
-            return jsonify({"error": "추천 결과에 유효한 travel_id가 없습니다."}), 500
-        recommendations = cleaned[:3]
-
-        # 6) travels 메타 조인
-        travel_ids = [int(r["travel_id"]) for r in recommendations]
+        # 6) 여행지 메타 조인
+        travel_ids = [r["travel_id"] for r in recs]
         travel_docs = list(mongo.db.travels.find(
             {"travel_id": {"$in": travel_ids}},
-            {"_id": 0, "travel_id": 1, "name": 1, "description": 1,
-             "image_url": 1, "latitude": 1, "longitude": 1}
+            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1,
+             "latitude": 1, "longitude": 1}
         ))
-        tmap = {int(d["travel_id"]): d for d in travel_docs}
+        tmap = {d["travel_id"]: d for d in travel_docs}
 
-        # 7) enrich (메타가 없어도 travel_id는 항상 내려보냄)
-        def _build_map_url(name, lat, lng):
-            if not name or lat is None or lng is None:
-                return None
+        def build_map_url(name, lat, lng):
             from urllib.parse import quote
-            enc = quote(name, safe="")
+            enc = quote(name or "", safe="")
             return f"https://map.kakao.com/link/map/{enc},{lat},{lng}"
 
+        # 7) 응답 R1 형태로 변환
         enriched = []
-        for rec in recommendations:
-            tid = int(rec["travel_id"])
-            meta = tmap.get(tid, {})
-            name = meta.get("name") or rec.get("name")
-            lat = meta.get("latitude")
-            lng = meta.get("longitude")
-
+        for r in recs:
+            meta = tmap.get(r["travel_id"])
+            if not meta:
+                continue
             enriched.append({
-                "travel_id": tid,  # ✅ 항상 포함
-                # (필요시 프론트 임시 호환) "travelId": tid,
-                "name": name,
-                "description": (meta.get("description") or rec.get("description")),
+                "travel_id": meta["travel_id"],
+                "name": meta.get("name"),
                 "thumbnail": meta.get("image_url"),
-                "location": ({"lat": lat, "lng": lng} if (lat is not None and lng is not None) else None),
-                "map_url": _build_map_url(name, lat, lng),
-                "scores": {
-                    "hybrid": rec.get("hybrid_score"),
-                    "similarity": rec.get("similarity_score"),
-                    "tag_match": rec.get("tag_score"),
-                }
+                "location": {
+                    "lat": meta.get("latitude"),
+                    "lng": meta.get("longitude")
+                },
+                "map_url": build_map_url(meta.get("name"), meta.get("latitude"), meta.get("longitude"))
             })
-
-        # 7-1) 디버그: 프론트로 내려갈 최종 페이로드 확인
-        print("[DEBUG] enriched recs =", enriched)
-
-        mode = ("free_text" if body.get("free_text")
-                else "tags" if body.get("tags")
-                else "survey" if user_tags
-                else "explicit")
 
         return jsonify({
             "status": "success",
-            "input": {"raw": body, "parsed": result.get("parsed_input"), "mode": mode},
-            "recommendations": enriched,
-            "meta": {"total_places": result.get("total_places"), "count": len(enriched)}
+            "mode": mode,
+            "recommendations": enriched
         }), 200
 
     except Exception as e:
