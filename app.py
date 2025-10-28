@@ -390,6 +390,22 @@ def recommend():
         ))
         tmap = {d["travel_id"]: d for d in travel_docs}
 
+        print("====== DEBUG START ======")
+        print("[DEBUG] travel_ids:", travel_ids)
+
+        travel_docs = list(mongo.db.travels.find(
+            {"travel_id": {"$in": travel_ids}},
+            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1, "latitude": 1, "longitude": 1}
+        ))
+        print("[DEBUG] DB 조회된 travel_docs 개수:", len(travel_docs))
+        for d in travel_docs:
+            print("[DEBUG] travel_doc =", d)
+
+        sample = mongo.db.travels.find_one()
+        print("[DEBUG] sample doc:", sample)
+
+        print("====== DEBUG END ======")
+
         def build_map_url(name, lat, lng):
             from urllib.parse import quote
             enc = quote(name or "", safe="")
@@ -417,22 +433,6 @@ def recommend():
                     "tag_match": r.get("tag_score")
                 }
             })
-
-        print("====== DEBUG START ======")
-        print("[DEBUG] travel_ids:", travel_ids)
-
-        travel_docs = list(mongo.db.travels.find(
-            {"travel_id": {"$in": travel_ids}},
-            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1, "latitude": 1, "longitude": 1}
-        ))
-        print("[DEBUG] DB 조회된 travel_docs 개수:", len(travel_docs))
-        for d in travel_docs:
-        print("[DEBUG] travel_doc =", d)
-
-        sample = mongo.db.travels.find_one()
-        print("[DEBUG] sample doc:", sample)
-
-        print("====== DEBUG END ======")
 
         return jsonify({
             "status": "success",
