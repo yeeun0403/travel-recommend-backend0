@@ -227,7 +227,7 @@ def list_my_bookmarks():
         {"travel_id": {"$in": travel_ids}},
         {"_id": 0, "travel_id": 1, "name": 1,"image_urls":1, "location": 1}
     ))
-    tmap = {t["travel_id"]: t for t in travel_docs}
+    tmap = {d["travel_id"]: d for d in travel_docs}
 
     items = []
     for b in bs:
@@ -242,8 +242,8 @@ def list_my_bookmarks():
             "name": meta.get("name"),
             "image_urls": meta.get("image_urls"),
             "location": {
-                "lat": meta.get("lat"),
-                "lng": meta.get("lng")
+                "lat": loc.get("lat"),
+                "lng": loc.get("lng")
             },
             "my_tags": b.get("tags", []),
             "bookmarked_at": b.get("created_at").isoformat() if b.get("created_at") else None
