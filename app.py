@@ -431,7 +431,22 @@ def recommend():
     except Exception as e:
         print("추천 오류:", e)
         return jsonify({"error": "추천 실패", "detail": str(e)}), 500
-    
+
+    print("====== DEBUG START ======")
+    print("[DEBUG] travel_ids:", travel_ids)
+
+    travel_docs = list(mongo.db.travels.find(
+        {"travel_id": {"$in": travel_ids}},
+        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1, "latitude": 1, "longitude": 1}
+    ))
+    print("[DEBUG] DB 조회된 travel_docs 개수:", len(travel_docs))
+    for d in travel_docs:
+        print("[DEBUG] travel_doc =", d)
+
+    sample = mongo.db.travels.find_one()
+    print("[DEBUG] sample doc:", sample)
+
+    print("====== DEBUG END ======")
 
 
 # 서버가 작동중인 지 확인하기 위함
