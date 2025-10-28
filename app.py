@@ -238,8 +238,8 @@ def list_my_bookmarks():
             "name": meta.get("name"),
             "image_url": meta.get("image_url"),
             "location": {
-                "lat": loc.get("lat")
-                "lng": loc.get("lng")
+                "lat": loc.get("latitude")
+                "lng": loc.get("longitude")
             },
             "my_tags": b.get("tags", []),
             "bookmarked_at": b.get("created_at").isoformat() if b.get("created_at") else None
@@ -408,8 +408,8 @@ def recommend():
                 "name": meta.get("name"),
                 "image_url": meta.get("image_url"),  # ✅ DB 컬럼명 반영
                 "location": {
-                    "lat": loc.get("lat"),
-                    "lng": loc.get("lng")
+                    "lat": loc.get("latitude"),
+                    "lng": loc.get("longitude")
                 },
                 "map_url": build_map_url(meta.get("name"), loc.get("lat"), loc.get("lng")),
                 "scores": {
