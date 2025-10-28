@@ -476,73 +476,71 @@ def health():
     }), status_code
 
 
-
-# 蹂꾩젏 �깅줉 諛� �낅뜲�댄듃
+# 별점 등록 업데이트
 @app.route('/rating', methods=['POST'])
+@jwt_required()
 def submit_rating():
-    data = request.json
-    
-    user_id = data.get('user_id')
-    travel_id = data.get('travel_id') # 蹂꾩젏 �④릿 �ы뻾吏�id
-    score = data.get('score')
+    data = request.get_json() or {}
 
-    # �ы솕: �쇰뱶諛� 湲곕뒫
-    feedback_tags = data.get('feedback_tags', []) # �쒓렇 由ъ뒪��
-
-    if not isinstance(feedback_tags, list):
-        feedback_tags = [feedback_tags]
-    
-    # �꾩닔 �곗씠�� �놁쓣 �� �ㅻ쪟泥섎━
-    if not all([user_id, travel_id, score]):
-        return jsonify({"error": "�꾩닔 �곗씠�곌� �꾨씫�섏뿀�듬땲��."}), 400
-
-    # score �レ옄/踰붿쐞 泥댄겕
+    # ✅ user_id는 더 이상 body에서 받지 않음
     try:
-        score_f = float(score)
-    except Exception:
-        return jsonify({"error": "蹂꾩젏�� �レ옄�ъ빞 �⑸땲��."}), 400            
-    if not (0.0 <= score_f <= 5.0):
-        return jsonify({"error": "蹂꾩젏�� 0~5 �ъ씠�ъ빞 �⑸땲��."}), 400
-
-    
-    # ObjectId濡� 蹂���
-    try:
+        user_id = get_jwt_identity()  # 로그인한 유저의 _id
         user_oid = ObjectId(user_id)
     except Exception:
-        return jsonify({"error": "�섎せ�� user_id �뺤떇�낅땲��."}), 400
+        return jsonify({"error": "잘못된 사용자 인증 정보입니다."}), 400
 
-    # travel_id �뺢퇋��
+    travel_id = data.get('travel_id')  # 별점 남긴 여행지id
+    score = data.get('score')
+
+    # 심화: 피드백 기능
+    feedback_tags = data.get('feedback_tags', [])
+    if not isinstance(feedback_tags, list):
+        feedback_tags = [feedback_tags]
+
+    # 필수 데이터 체크
+    if not all([travel_id, score]):
+        return jsonify({"error": "travel_id와 score는 필수입니다."}), 400
+
+    # score 숫자/범위 체크
+    try:
+        score_f = float(score)
+    except:
+        return jsonify({"error": "별점은 숫자여야 합니다."}), 400
+
+    if not (0.0 <= score_f <= 5.0):
+        return jsonify({"error": "별점은 0~5 사이여야 합니다."}), 400
+
+    # travel_id 정수 변환
     try:
         travel_id_int = int(travel_id)
-    except Exception:
-        return jsonify({"error": "travel_id�� �뺤닔�ъ빞 �⑸땲��."}), 400
+    except:
+        return jsonify({"error": "travel_id는 정수여야 합니다."}), 400
 
-    now = datetime.datetime.utcnow() # �꾩옱 �쒓컖 - 肄붾뱶 媛꾧껐��
+    now = datetime.datetime.utcnow()
 
-    # 蹂꾩젏�� �덉쓣 �� 湲곗〈 蹂꾩젏 �낅뜲�댄듃
+    # 기존 별점 업데이트 or 새로 추가
     result = mongo.db.ratings.update_one(
-        {"user_id":user_oid, "travel_id": travel_id_int},
+        {"user_id": user_oid, "travel_id": travel_id_int},
         {
             "$set": {
                 "score": score_f,
                 "feedback_tags": feedback_tags,
                 "updated_at": now
             },
-            "$setOnInsert": {"created_at" : now}
+            "$setOnInsert": {"created_at": now}
         },
         upsert=True
     )
 
-
-    # 蹂꾩젏 援щ텇
+    # 응답 메시지
     if result.upserted_id:
-        message = "蹂꾩젏�� �덈줈 �깅줉�섏뿀�듬땲��."
+        message = "별점이 새로 등록되었습니다."
     elif result.modified_count > 0:
-        message = "蹂꾩젏�� �깃났�곸쑝濡� �섏젙�섏뿀�듬땲��."
+        message = "별점이 수정되었습니다."
     else:
-        message = "湲곗〈 蹂꾩젏怨� �숈씪�섏뿬 蹂�寃쎈릺吏� �딆븯�듬땲��."
-    
-    return jsonify({"message":message}), 201
+        message = "기존 별점과 동일하여 변경되지 않았습니다."
+
+    return jsonify({"message": message}), 201
 
 
 # ------------------------------
