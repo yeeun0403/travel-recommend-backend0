@@ -507,7 +507,8 @@ def submit_rating():
     except Exception:
         return jsonify({"error": "travel_id는 정수여야 합니다."}), 400
 
-    now = datetime.datetime.utcnow() # 현재 시각 - 코드 간결화
+    now = datetime.datetime.utcnow()
+    # 현재 시각 - 코드 간결화
 
     # 별점이 있을 시 기존 별점 업데이트
     result = mongo.db.ratings.update_one(
