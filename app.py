@@ -551,12 +551,15 @@ def submit_rating():
     # 응답 메시지
     if result.upserted_id:
         message = "별점이 새로 등록되었습니다."
+        status = 201
     elif result.modified_count > 0:
         message = "별점이 수정되었습니다."
+        status = 200
     else:
         message = "기존 별점과 동일하여 변경되지 않았습니다."
+        status = 200
 
-    return jsonify({"message": message}), 201
+    return jsonify({"message": message}), status
 
 
 # ------------------------------
