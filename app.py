@@ -4,38 +4,38 @@ from config import Config
 import pandas as pd
 import numpy as np
 
-# 회원가입, 로그인 관련
+# �뚯썝媛���, 濡쒓렇�� 愿���
 import datetime
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 
-# DB 관련
+# DB 愿���
 from extensions import mongo
 from user_utils import username_exists, email_exists, create_user, get_user_by_username, check_user_password
 
-# 모델 관련 라이브러리
+# 紐⑤뜽 愿��� �쇱씠釉뚮윭由�
 import joblib, os
 
-# MongoDB _id 검색 위해 문자열을 ObjectId로 변환(변환 실패시 에러 반환)
+# MongoDB _id 寃��� �꾪빐 臾몄옄�댁쓣 ObjectId濡� 蹂���(蹂��� �ㅽ뙣�� �먮윭 諛섑솚)
 from bson.objectid import ObjectId
 
-# 여행지 추천 시스템 GangwonPlaceRecommender 클래스  파일 읽어오기
+# �ы뻾吏� 異붿쿇 �쒖뒪�� GangwonPlaceRecommender �대옒��  �뚯씪 �쎌뼱�ㅺ린
 from project_root1.recommend_module import GangwonPlaceRecommender
 
-# 지도URL
+# 吏��꼀RL
 from urllib.parse import quote
 
 
-# 앱초기화
+# �깆큹湲고솕
 app = Flask(__name__)
-CORS(app) # 프론트에서 접근 가능하게 허용(모든 도메인 허용 - 개발용)
+CORS(app) # �꾨줎�몄뿉�� �묎렐 媛��ν븯寃� �덉슜(紐⑤뱺 �꾨찓�� �덉슜 - 媛쒕컻��)
 app.config.from_object(Config)
 
 
-# DB 연동 환경변수
+# DB �곕룞 �섍꼍蹂���
 if "MONGO_URI" in os.environ:
     app.config["MONGO_URI"] = os.environ["MONGO_URI"]
 
-# DB 환경변수 버그확인 코드
+# DB �섍꼍蹂��� 踰꾧렇�뺤씤 肄붾뱶
 print("DEBUG env MONGO_URI =", os.environ.get("MONGO_URI"))
 print("DEBUG conf MONGO_URI =", app.config.get("MONGO_URI"))
 
@@ -43,39 +43,39 @@ print("DEBUG conf MONGO_URI =", app.config.get("MONGO_URI"))
 mongo.init_app(app) 
 jwt = JWTManager(app)
 
-# 전역 JSON 검사
+# �꾩뿭 JSON 寃���
 @app.before_request
 def enforce_json_for_api():
-    # JSON 바디를 요구하는 엔드포인트만 제한
+    # JSON 諛붾뵒瑜� �붽뎄�섎뒗 �붾뱶�ъ씤�몃쭔 �쒗븳
     json_required_paths = {"/signup", "/login", "/rating", "/recommend"}
     if request.path in json_required_paths and request.method == "POST":
         if not request.is_json:
             return jsonify({"error": "Content-Type must be application/json"}), 415
     
 
-# 회원가입
+# �뚯썝媛���
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
-    username = data.get('username') # 사용자 로그인용 아이디
+    username = data.get('username') # �ъ슜�� 濡쒓렇�몄슜 �꾩씠��
     email = data.get('email')
     password = data.get('password')
-    name = data.get('name') # 사용자 이름
+    name = data.get('name') # �ъ슜�� �대쫫
 
     if not username or not email or not password or not name:
-        return jsonify({'error': '모든 값을 입력해주세요.'}), 400
+        return jsonify({'error': '紐⑤뱺 媛믪쓣 �낅젰�댁＜�몄슂.'}), 400
     
     if username_exists(username):
-        return jsonify({'error': '이미 존재하는 아이디입니다.'}), 409
+        return jsonify({'error': '�대� 議댁옱�섎뒗 �꾩씠�붿엯�덈떎.'}), 409
 
     if email_exists(email):
-        return jsonify({'error': '이미 존재하는 이메일입니다.'}), 409
+        return jsonify({'error': '�대� 議댁옱�섎뒗 �대찓�쇱엯�덈떎.'}), 409
 
     user_id = create_user(username, email, password, name)
-    return jsonify({'message': '사용자가 성공적으로 생성되었습니다.', 'user_id': user_id}), 201
+    return jsonify({'message': '�ъ슜�먭� �깃났�곸쑝濡� �앹꽦�섏뿀�듬땲��.', 'user_id': user_id}), 201
 
 
-# 로그인
+# 濡쒓렇��
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -83,31 +83,31 @@ def login():
     password = data.get('password')
 
     if not username or not password:
-        return jsonify({'error': '아이디와 비밀번호를 입력해주세요.'}), 400
+        return jsonify({'error': '�꾩씠�붿� 鍮꾨�踰덊샇瑜� �낅젰�댁＜�몄슂.'}), 400
 
     user = get_user_by_username(username)
     
     if not user or not check_user_password(user, password):
-        return jsonify({'error': '아이디 또는 비밀번호 오류'}), 401
+        return jsonify({'error': '�꾩씠�� �먮뒗 鍮꾨�踰덊샇 �ㅻ쪟'}), 401
 
-    # JWT 발급
+    # JWT 諛쒓툒
     access_token = create_access_token(identity=str(user['_id']))
     return jsonify({'access_token': access_token}), 200
 
 
-# 마이페이지(로그인된 사용자만 접근 가능)
+# 留덉씠�섏씠吏�(濡쒓렇�몃맂 �ъ슜�먮쭔 �묎렐 媛���)
 @app.route('/mypage', methods=['GET'])
 @jwt_required()
 def mypage():
     try:
         current_user_id = ObjectId(get_jwt_identity())
     except:
-        return jsonify({"error": "잘못된 사용자 ID"}), 400
+        return jsonify({"error": "�섎せ�� �ъ슜�� ID"}), 400
 
     user = mongo.db.users.find_one({"_id": current_user_id})
     
     if not user:
-        return jsonify({"error": "사용자를 찾을 수 없습니다."}), 404
+        return jsonify({"error": "�ъ슜�먮� 李얠쓣 �� �놁뒿�덈떎."}), 404
 
     cur = mongo.db.ratings.find({"user_id": current_user_id}).sort("updated_at", -1)
     ratings = []
@@ -129,16 +129,16 @@ def mypage():
         "id": str(user['_id']),
         "username": user['username'],
         "email": user['email'],
-        "message": f"{user['username']}님의 마이페이지입니다!",
+        "message": f"{user['username']}�섏쓽 留덉씠�섏씠吏��낅땲��!",
         "ratings": ratings
     }), 200
 
 
 # ============================================================================
-# 민서님 파트 추가한 부분
+# 誘쇱꽌�� �뚰듃 異붽��� 遺�遺�
 
 
-# 마이페이지에서 태그 설문조사
+# 留덉씠�섏씠吏��먯꽌 �쒓렇 �ㅻЦ議곗궗
 @app.route('/mypage/tags', methods=['POST'])
 @jwt_required()
 def save_user_tags():
@@ -146,14 +146,14 @@ def save_user_tags():
     try:
         user_oid = ObjectId(user_id)
     except:
-        return jsonify({"error": "잘못된 사용자 ID"}), 400
+        return jsonify({"error": "�섎せ�� �ъ슜�� ID"}), 400
 
     body = request.get_json() or {}
     tags = body.get("tags", [])
     if not isinstance(tags, list):
         return jsonify({"error": "tags must be a list"}), 400
 
-    # 정규화(공백/중복 제거, '#' 제거, 소문자)
+    # �뺢퇋��(怨듬갚/以묐났 �쒓굅, '#' �쒓굅, �뚮Ц��)
     norm = []
     seen = set()
     for t in tags:
@@ -170,7 +170,7 @@ def save_user_tags():
     return jsonify({"user_id": user_id, "tags": norm}), 200
 
 
-# 마이페이지에서 설문한 태그 확인
+# 留덉씠�섏씠吏��먯꽌 �ㅻЦ�� �쒓렇 �뺤씤
 @app.route('/mypage/tags', methods=['GET'])
 @jwt_required()
 def get_user_tags():
@@ -178,13 +178,13 @@ def get_user_tags():
     try:
         user_oid = ObjectId(user_id)
     except:
-        return jsonify({"error": "잘못된 사용자 ID"}), 400
+        return jsonify({"error": "�섎せ�� �ъ슜�� ID"}), 400
 
     doc = mongo.db.user_tags.find_one({"user_id": user_oid}, {"_id": 0, "tags": 1})
     return jsonify({"user_id": user_id, "tags": doc.get("tags", []) if doc else []}), 200
 
 
-# 추천 받은 여행지 북마크할 때 호출
+# 異붿쿇 諛쏆� �ы뻾吏� 遺곷쭏�ы븷 �� �몄텧
 @app.route('/mypage/bookmarks/<int:travel_id>', methods=['POST'])
 @jwt_required()
 def toggle_bookmark(travel_id):
@@ -192,7 +192,7 @@ def toggle_bookmark(travel_id):
     try:
         user_oid = ObjectId(user_id)
     except:
-        return jsonify({"error": "잘못된 사용자 ID"}), 400
+        return jsonify({"error": "�섎せ�� �ъ슜�� ID"}), 400
 
     existing = mongo.db.bookmarks.find_one({"user_id": user_oid, "travel_id": travel_id})
     if existing:
@@ -202,13 +202,13 @@ def toggle_bookmark(travel_id):
         mongo.db.bookmarks.insert_one({
             "user_id": user_oid,
             "travel_id": travel_id,
-            "tags": [],  # 초기엔 태그 없음
+            "tags": [],  # 珥덇린�� �쒓렇 �놁쓬
             "created_at": datetime.datetime.utcnow()
         })
         return jsonify({"status": "bookmarked", "travel_id": travel_id}), 201
 
 
-# 북마크 한 여행지 목록 확
+# 遺곷쭏�� �� �ы뻾吏� 紐⑸줉 ��
 @app.route('/mypage/bookmarks', methods=['GET'])
 @jwt_required()
 def list_my_bookmarks():
@@ -216,30 +216,34 @@ def list_my_bookmarks():
     try:
         user_oid = ObjectId(user_id)
     except:
-        return jsonify({"error": "잘못된 사용자 ID"}), 400
+        return jsonify({"error": "�섎せ�� �ъ슜�� ID"}), 400
 
-    # bookmarks 조인: travels에서 메타 가져오기
+    # bookmarks 議곗씤: travels�먯꽌 硫뷀� 媛��몄삤湲�
     bs = list(mongo.db.bookmarks.find({"user_id": user_oid}))
     
     travel_ids = [b["travel_id"] for b in bs]
     
     travel_docs = list(mongo.db.travels.find(
         {"travel_id": {"$in": travel_ids}},
-        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1}
+        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1,"image_urls":1, "location": 1}
     ))
     tmap = {t["travel_id"]: t for t in travel_docs}
 
     items = []
     for b in bs:
         meta = tmap.get(b["travel_id"], {})
-        loc = meta.get("location") or {}
+        loc = meta.get("location", {})
+        image_url = meta.get("image_url")
+        if not image_url and meta.get("image_urls"):
+            urls = str(meta.get("image_urls")).split(",")
+            image_url = urls[0].strip() if urls else None
         items.append({
             "travel_id": b["travel_id"],
             "name": meta.get("name"),
-            "image_url": meta.get("image_urls"),
+            "image_url": meta.get("image_url"),
             "location": {
-                "lat": meta.get("latitude"),
-                "lng": meta.get("longitude")
+                "lat": meta.get("lat"),
+                "lng": meta.get("lng")
             },
             "my_tags": b.get("tags", []),
             "bookmarked_at": b.get("created_at").isoformat() if b.get("created_at") else None
@@ -248,7 +252,7 @@ def list_my_bookmarks():
     return jsonify({"bookmarks": items, "count": len(items)}), 200
 
 
-# 북마크한 여행지에 사용자가 태그 추가
+# 遺곷쭏�ы븳 �ы뻾吏��� �ъ슜�먭� �쒓렇 異붽�
 @app.route('/mypage/bookmarks/<int:travel_id>/tags', methods=['POST'])
 @jwt_required()
 def save_bookmark_tags(travel_id):
@@ -256,14 +260,14 @@ def save_bookmark_tags(travel_id):
     try:
         user_oid = ObjectId(user_id)
     except:
-        return jsonify({"error": "잘못된 사용자 ID"}), 400
+        return jsonify({"error": "�섎せ�� �ъ슜�� ID"}), 400
 
     body = request.get_json() or {}
     tags = body.get("tags", [])
     if not isinstance(tags, list):
         return jsonify({"error": "tags must be a list"}), 400
 
-    # 정규화
+    # �뺢퇋��
     norm, seen = [], set()
     for t in tags:
         s = str(t).strip().lstrip("#").lower()
@@ -271,10 +275,10 @@ def save_bookmark_tags(travel_id):
             seen.add(s)
             norm.append(s)
 
-    # 내 북마크인지 확인
+    # �� 遺곷쭏�ъ씤吏� �뺤씤
     bk = mongo.db.bookmarks.find_one({"user_id": user_oid, "travel_id": travel_id})
     if not bk:
-        return jsonify({"error": "해당 여행지는 북마크되어 있지 않습니다."}), 404
+        return jsonify({"error": "�대떦 �ы뻾吏��� 遺곷쭏�щ릺�� �덉� �딆뒿�덈떎."}), 404
 
     mongo.db.bookmarks.update_one(
         {"_id": bk["_id"]},
@@ -286,25 +290,25 @@ def save_bookmark_tags(travel_id):
 
 
 # ==================================================================================
-# 여행지 추천 코드
+# �ы뻾吏� 異붿쿇 肄붾뱶
 
 
-# 경로 설정
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # app.py 경로
+# 寃쎈줈 �ㅼ젙
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # app.py 寃쎈줈
 PROJECT_ROOT = os.path.join(BASE_DIR, "project_root1")
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 PROCESSED_CSV = os.path.join(PROJECT_ROOT, "data", "processed", "gangwon_matching_results_sorted.csv")
 EMBEDDING_NPY = os.path.join(PROJECT_ROOT, "place_embeddings_v2.npy")
 
-# 초기
+# 珥덇린
 recommender = GangwonPlaceRecommender(config_path=CONFIG_PATH)
 
-# 모델/ 데이터 로딩
+# 紐⑤뜽/ �곗씠�� 濡쒕뵫
 try:
     recommender.df = pd.read_csv(PROCESSED_CSV).reset_index(drop=True)
     recommender.place_embeddings = np.load(EMBEDDING_NPY)
 except Exception as e:
-    print("[WARN] 추천기 초기 로딩 실패:", e)
+    print("[WARN] 異붿쿇湲� 珥덇린 濡쒕뵫 �ㅽ뙣:", e)
 
 try:
     print("[BOOT] df loaded rows:", len(recommender.df) if getattr(recommender, "df", None) is not None else 0)
@@ -317,7 +321,7 @@ except Exception as e:
     print("[BOOT] startup check failed:", e)
 
 
-# 지도 URL 자동생성(클릭하면 카카오맵 오픈)
+# 吏��� URL �먮룞�앹꽦(�대┃�섎㈃ 移댁뭅�ㅻ㏊ �ㅽ뵂)
 def build_map_url(name, lat, lng):
     enc_name = quote(name or "", safe="")
     return f"https://map.kakao.com/link/map/{enc_name},{lat},{lng}"
@@ -329,7 +333,7 @@ def recommend():
     try:
         body = request.get_json(silent=True) or {}
 
-        # 1) 로그인 유저 확인 (optional)
+        # 1) 濡쒓렇�� �좎� �뺤씤 (optional)
         user_id = None
         try:
             verify_jwt_in_request(optional=True)
@@ -337,7 +341,7 @@ def recommend():
         except Exception:
             user_id = None
 
-        # 2) 설문 태그(DB)
+        # 2) �ㅻЦ �쒓렇(DB)
         user_tags = []
         if user_id:
             try:
@@ -348,10 +352,10 @@ def recommend():
                 if doc and doc.get("tags"):
                     user_tags = doc["tags"]
             except Exception as e:
-                print("[WARN] user_tags 조회 실패:", e)
+                print("[WARN] user_tags 議고쉶 �ㅽ뙣:", e)
 
-        # 3) 입력 우선순위 결정 (A 방식: 설문태그 우선)
-        # - free_text > tags > 설문태그 > 명시필드
+        # 3) �낅젰 �곗꽑�쒖쐞 寃곗젙 (A 諛⑹떇: �ㅻЦ�쒓렇 �곗꽑)
+        # - free_text > tags > �ㅻЦ�쒓렇 > 紐낆떆�꾨뱶
         if isinstance(body.get("free_text"), str) and body["free_text"].strip():
             data_for_model = {"free_text": body["free_text"].strip()}
             mode = "free_text"
@@ -369,63 +373,56 @@ def recommend():
             data_for_model = {}
             mode = "fallback"
 
-        # 4) 추천 수행
+        # 4) 異붿쿇 �섑뻾
         result = recommender.recommend_places(data_for_model, top_k=3)
         recs = result.get("recommendations", [])[:3]
 
         print("[DEBUG] recs raw:", recs)
 
-        # 5) travel_id 존재 확인
+        # 5) travel_id 議댁옱 �뺤씤
         recs = [r for r in recs if r.get("travel_id") is not None]
         if not recs:
-            return jsonify({"error": "추천 결과에 유효한 travel_id가 없습니다."}), 500
+            return jsonify({"error": "異붿쿇 寃곌낵�� �좏슚�� travel_id媛� �놁뒿�덈떎."}), 500
 
         print("[DEBUG] keys in first rec:", recs[0].keys() if recs else "NO RECS")
 
-        # 6) 여행지 메타 조인
+        # 6) �ы뻾吏� 硫뷀� 議곗씤
         travel_ids = [r["travel_id"] for r in recs]
         travel_docs = list(mongo.db.travels.find(
-            {"travel_id": {"$in": travel_ids}},
-            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1}
-        ))
+        {"travel_id": {"$in": travel_ids}},
+        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "image_urls": 1, "location": 1}
+            ))
         tmap = {d["travel_id"]: d for d in travel_docs}
-
-        print("====== DEBUG START ======")
-        print("[DEBUG] travel_ids:", travel_ids)
-
-        travel_docs = list(mongo.db.travels.find(
-            {"travel_id": {"$in": travel_ids}},
-            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1, "latitude": 1, "longitude": 1}
-        ))
-        print("[DEBUG] DB 조회된 travel_docs 개수:", len(travel_docs))
-        for d in travel_docs:
-            print("[DEBUG] travel_doc =", d)
-
-        sample = mongo.db.travels.find_one()
-        print("[DEBUG] sample doc:", sample)
-
-        print("====== DEBUG END ======")
 
         def build_map_url(name, lat, lng):
             from urllib.parse import quote
             enc = quote(name or "", safe="")
             return f"https://map.kakao.com/link/map/{enc},{lat},{lng}"
-        
 
-        # 7) 응답 R1 형태로 변환
+        # 7) �묐떟 R1 �뺥깭濡� 蹂���
         enriched = []
         for r in recs:
             meta = tmap.get(r["travel_id"])
             if not meta:
                 continue
             
+            loc = meta.get("location", {})
+            lat = loc.get("lat")
+            lng = loc.get("lng")
+
+            # �� image_url 泥섎━
+            image_url = meta.get("image_url")
+            if not image_url and meta.get("image_urls"):
+                urls = str(meta.get("image_urls")).split(",")
+                image_url = urls[0].strip() if urls else None
+
             enriched.append({
                 "travel_id": r["travel_id"],
                 "name": meta.get("name"),
-                "image_url": meta.get("image_urls"),
+                "image_url": meta.get("image_url"),  # �� DB 而щ읆紐� 諛섏쁺
                 "location": {
-                    "lat": meta.get("latitude"),
-                    "lng": meta.get("longitude")
+                    "lat": lat,
+                    "lng": lng
                 },
                 "map_url": build_map_url(meta.get("name"), loc.get("lat"), loc.get("lng")),
                 "scores": {
@@ -442,34 +439,33 @@ def recommend():
         }), 200
 
     except Exception as e:
-        print("추천 오류:", e)
-        return jsonify({"error": "추천 실패", "detail": str(e)}), 500
-
+        print("異붿쿇 �ㅻ쪟:", e)
+        return jsonify({"error": "異붿쿇 �ㅽ뙣", "detail": str(e)}), 500
     
 
 
-# 서버가 작동중인 지 확인하기 위함
+# �쒕쾭媛� �묐룞以묒씤 吏� �뺤씤�섍린 �꾪븿
 @app.route('/health', methods=['GET'])
 def health():
-    # 모델이 정상적으로 로드됐는지도 상태에 포함
-    # DB 연결 상태도 체크
+    # 紐⑤뜽�� �뺤긽�곸쑝濡� 濡쒕뱶�먮뒗吏��� �곹깭�� �ы븿
+    # DB �곌껐 �곹깭�� 泥댄겕
 
-    db_ok = False # 기본
-    db_error = None # 기본
+    db_ok = False # 湲곕낯
+    db_error = None # 湲곕낯
     
     try:
         mongo.cx.admin.command("ping")
         db_ok = True
     except Exception as e:
-        db_error = str(e) # 에러메시지 저
+        db_error = str(e) # �먮윭硫붿떆吏� ��
         
-    # 모델 연결 체크
+    # 紐⑤뜽 �곌껐 泥댄겕
     places_loaded = len(recommender.df) if getattr(recommender, "df", None) is not None else 0
     embedding_ready = hasattr(recommender, "place_embeddings")
 
-    # 전체 연결상태 판단
-    overall_ok = db_ok and places_loaded > 0 and embedding_ready # 전부 연결됐을 때
-    status_code = 200 if overall_ok else 503  # 전부 연결 -> 200, 하나라도 연결 안됨 -> 503
+    # �꾩껜 �곌껐�곹깭 �먮떒
+    overall_ok = db_ok and places_loaded > 0 and embedding_ready # �꾨� �곌껐�먯쓣 ��
+    status_code = 200 if overall_ok else 503  # �꾨� �곌껐 -> 200, �섎굹�쇰룄 �곌껐 �덈맖 -> 503
 
     return jsonify({
         "status": "ok" if overall_ok else "degraded",
@@ -481,50 +477,49 @@ def health():
 
 
 
-# 별점 등록 및 업데이트
+# 蹂꾩젏 �깅줉 諛� �낅뜲�댄듃
 @app.route('/rating', methods=['POST'])
 def submit_rating():
     data = request.json
     
     user_id = data.get('user_id')
-    travel_id = data.get('travel_id') # 별점 남긴 여행지id
+    travel_id = data.get('travel_id') # 蹂꾩젏 �④릿 �ы뻾吏�id
     score = data.get('score')
 
-    # 심화: 피드백 기능
-    feedback_tags = data.get('feedback_tags', []) # 태그 리스트
+    # �ы솕: �쇰뱶諛� 湲곕뒫
+    feedback_tags = data.get('feedback_tags', []) # �쒓렇 由ъ뒪��
 
     if not isinstance(feedback_tags, list):
         feedback_tags = [feedback_tags]
     
-    # 필수 데이터 없을 시 오류처리
+    # �꾩닔 �곗씠�� �놁쓣 �� �ㅻ쪟泥섎━
     if not all([user_id, travel_id, score]):
-        return jsonify({"error": "필수 데이터가 누락되었습니다."}), 400
+        return jsonify({"error": "�꾩닔 �곗씠�곌� �꾨씫�섏뿀�듬땲��."}), 400
 
-    # score 숫자/범위 체크
+    # score �レ옄/踰붿쐞 泥댄겕
     try:
         score_f = float(score)
     except Exception:
-        return jsonify({"error": "별점은 숫자여야 합니다."}), 400            
+        return jsonify({"error": "蹂꾩젏�� �レ옄�ъ빞 �⑸땲��."}), 400            
     if not (0.0 <= score_f <= 5.0):
-        return jsonify({"error": "별점은 0~5 사이여야 합니다."}), 400
+        return jsonify({"error": "蹂꾩젏�� 0~5 �ъ씠�ъ빞 �⑸땲��."}), 400
 
     
-    # ObjectId로 변환
+    # ObjectId濡� 蹂���
     try:
         user_oid = ObjectId(user_id)
     except Exception:
-        return jsonify({"error": "잘못된 user_id 형식입니다."}), 400
+        return jsonify({"error": "�섎せ�� user_id �뺤떇�낅땲��."}), 400
 
-    # travel_id 정규화
+    # travel_id �뺢퇋��
     try:
         travel_id_int = int(travel_id)
     except Exception:
-        return jsonify({"error": "travel_id는 정수여야 합니다."}), 400
+        return jsonify({"error": "travel_id�� �뺤닔�ъ빞 �⑸땲��."}), 400
 
-    now = datetime.datetime.utcnow()
-    # 현재 시각 - 코드 간결화
+    now = datetime.datetime.utcnow() # �꾩옱 �쒓컖 - 肄붾뱶 媛꾧껐��
 
-    # 별점이 있을 시 기존 별점 업데이트
+    # 蹂꾩젏�� �덉쓣 �� 湲곗〈 蹂꾩젏 �낅뜲�댄듃
     result = mongo.db.ratings.update_one(
         {"user_id":user_oid, "travel_id": travel_id_int},
         {
@@ -539,26 +534,26 @@ def submit_rating():
     )
 
 
-    # 별점 구분
+    # 蹂꾩젏 援щ텇
     if result.upserted_id:
-        message = "별점이 새로 등록되었습니다."
+        message = "蹂꾩젏�� �덈줈 �깅줉�섏뿀�듬땲��."
     elif result.modified_count > 0:
-        message = "별점이 성공적으로 수정되었습니다."
+        message = "蹂꾩젏�� �깃났�곸쑝濡� �섏젙�섏뿀�듬땲��."
     else:
-        message = "기존 별점과 동일하여 변경되지 않았습니다."
+        message = "湲곗〈 蹂꾩젏怨� �숈씪�섏뿬 蹂�寃쎈릺吏� �딆븯�듬땲��."
     
     return jsonify({"message":message}), 201
 
 
 # ------------------------------
-# 서버 링크 검색 시 나오는 문장
+# �쒕쾭 留곹겕 寃��� �� �섏삤�� 臾몄옣
 @app.route('/')
 def home():
-    return '서버 잘 작동 중입니다.'
+    return '�쒕쾭 �� �묐룞 以묒엯�덈떎.'
 
 
 if __name__ == "__main__":
-    # 환경변수 설정
+    # �섍꼍蹂��� �ㅼ젙
     port = int(os.environ.get("PORT", 5000))
-    # 모든 IP주소에서 접근 가능
+    # 紐⑤뱺 IP二쇱냼�먯꽌 �묎렐 媛���
     app.run(debug=False, host="0.0.0.0", port=port)
