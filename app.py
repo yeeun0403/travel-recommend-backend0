@@ -225,7 +225,7 @@ def list_my_bookmarks():
     
     travel_docs = list(mongo.db.travels.find(
         {"travel_id": {"$in": travel_ids}},
-        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1,"image_urls":1, "location": 1}
+        {"_id": 0, "travel_id": 1, "name": 1,"image_urls":1, "location": 1}
     ))
     tmap = {t["travel_id"]: t for t in travel_docs}
 
@@ -233,14 +233,14 @@ def list_my_bookmarks():
     for b in bs:
         meta = tmap.get(b["travel_id"], {})
         loc = meta.get("location", {})
-        image_url = meta.get("image_url")
-        if not image_url and meta.get("image_urls"):
+        image_urls = meta.get("image_urls")
+        if not image_urls and meta.get("image_urls"):
             urls = str(meta.get("image_urls")).split(",")
-            image_url = urls[0].strip() if urls else None
+            image_urls = urls[0].strip() if urls else None
         items.append({
             "travel_id": b["travel_id"],
             "name": meta.get("name"),
-            "image_url": meta.get("image_url"),
+            "image_urls": meta.get("image_urls"),
             "location": {
                 "lat": meta.get("lat"),
                 "lng": meta.get("lng")
@@ -390,7 +390,7 @@ def recommend():
         travel_ids = [r["travel_id"] for r in recs]
         travel_docs = list(mongo.db.travels.find(
         {"travel_id": {"$in": travel_ids}},
-        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "image_urls": 1, "location": 1}
+        {"_id": 0, "travel_id": 1, "name": 1,"image_urls": 1, "location": 1}
             ))
         tmap = {d["travel_id"]: d for d in travel_docs}
 
@@ -411,15 +411,15 @@ def recommend():
             lng = loc.get("lng")
 
             # �� image_url 泥섎━
-            image_url = meta.get("image_url")
-            if not image_url and meta.get("image_urls"):
+            image_urls = meta.get("image_urls")
+            if not image_urls and meta.get("image_urls"):
                 urls = str(meta.get("image_urls")).split(",")
-                image_url = urls[0].strip() if urls else None
+                image_urls = urls[0].strip() if urls else None
 
             enriched.append({
                 "travel_id": r["travel_id"],
                 "name": meta.get("name"),
-                "image_url": meta.get("image_url"),  # �� DB 而щ읆紐� 諛섏쁺
+                "image_urls": meta.get("image_urls"),  # �� DB 而щ읆紐� 諛섏쁺
                 "location": {
                     "lat": lat,
                     "lng": lng
