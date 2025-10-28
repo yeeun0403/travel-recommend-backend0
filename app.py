@@ -519,6 +519,14 @@ def submit_rating():
     now = datetime.datetime.utcnow()
 
     # 기존 별점 업데이트 or 새로 추가
+    print("===== RATING DEBUG =====")
+    print("[DEBUG] user_id from JWT:", user_id, type(user_id))
+    print("[DEBUG] user_oid:", user_oid)
+    print("[DEBUG] travel_id_int:", travel_id_int, type(travel_id_int))
+
+    before = mongo.db.ratings.find_one({"user_id": user_oid, "travel_id": travel_id_int})
+    print("[DEBUG] 기존 rating 존재?:", before)
+
     result = mongo.db.ratings.update_one(
         {"user_id": user_oid, "travel_id": travel_id_int},
         {
@@ -531,6 +539,11 @@ def submit_rating():
         },
         upsert=True
     )
+
+    print("[DEBUG] update result:", result.raw_result)
+    after = mongo.db.ratings.find_one({"user_id": user_oid, "travel_id": travel_id_int})
+    print("[DEBUG] 저장 결과:", after)
+    print("===== END DEBUG =====")
 
     # 응답 메시지
     if result.upserted_id:
