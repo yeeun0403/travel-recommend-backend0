@@ -378,6 +378,9 @@ def recommend():
         recs = result.get("recommendations", [])[:3]
 
         print("[DEBUG] recs raw:", recs)
+        print("[DEBUG] body:", body)
+        print("[DEBUG] body['tags']:", body.get("tags"), type(body.get("tags")))
+        print("[DEBUG] mode:", mode)
 
         # 5) travel_id 議댁옱 �뺤씤
         recs = [r for r in recs if r.get("travel_id") is not None]
