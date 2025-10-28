@@ -410,6 +410,7 @@ def recommend():
             from urllib.parse import quote
             enc = quote(name or "", safe="")
             return f"https://map.kakao.com/link/map/{enc},{lat},{lng}"
+        
 
         # 7) 응답 R1 형태로 변환
         enriched = []
