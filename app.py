@@ -402,10 +402,6 @@ def recommend():
             if not meta:
                 continue
             
-            loc = {
-                    "lat": meta.get("latitude"),
-                    "lng": meta.get("longitude")
-            }
             enriched.append({
                 "travel_id": r["travel_id"],
                 "name": meta.get("name"),
