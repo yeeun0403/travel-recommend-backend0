@@ -238,7 +238,7 @@ def list_my_bookmarks():
             "name": meta.get("name"),
             "image_url": meta.get("image_url"),
             "location": {
-                "lat": loc.get("latitude")
+                "lat": loc.get("latitude"),
                 "lng": loc.get("longitude")
             },
             "my_tags": b.get("tags", []),
