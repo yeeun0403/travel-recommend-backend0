@@ -220,24 +220,31 @@ def list_my_bookmarks():
 
     # bookmarks 조인: travels에서 메타 가져오기
     bs = list(mongo.db.bookmarks.find({"user_id": user_oid}))
+    
     travel_ids = [b["travel_id"] for b in bs]
+    
     travel_docs = list(mongo.db.travels.find(
         {"travel_id": {"$in": travel_ids}},
-        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "latitude": 1, "longitude": 1}
+        {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1}
     ))
     tmap = {t["travel_id"]: t for t in travel_docs}
 
     items = []
     for b in bs:
         meta = tmap.get(b["travel_id"], {})
+        loc = meta.get("location") or {}
         items.append({
             "travel_id": b["travel_id"],
             "name": meta.get("name"),
-            "thumbnail": meta.get("image_url"),
-            "location": {"lat": meta.get("latitude"), "lng": meta.get("longitude")},
+            "image_url": meta.get("image_url"),
+            "location": {
+                "lat": loc.get("lat")
+                "lng": loc.get("lng")
+            },
             "my_tags": b.get("tags", []),
             "bookmarked_at": b.get("created_at").isoformat() if b.get("created_at") else None
         })
+        
     return jsonify({"bookmarks": items, "count": len(items)}), 200
 
 
@@ -379,8 +386,7 @@ def recommend():
         travel_ids = [r["travel_id"] for r in recs]
         travel_docs = list(mongo.db.travels.find(
             {"travel_id": {"$in": travel_ids}},
-            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1,
-             "latitude": 1, "longitude": 1}
+            {"_id": 0, "travel_id": 1, "name": 1, "image_url": 1, "location": 1}
         ))
         tmap = {d["travel_id"]: d for d in travel_docs}
 
@@ -395,15 +401,17 @@ def recommend():
             meta = tmap.get(r["travel_id"])
             if not meta:
                 continue
+            
+            loc = meta.get("location") or {}
             enriched.append({
                 "travel_id": r["travel_id"],
-                "name": r.get("name"),
-                "thumbnail": meta.get("image_url"),
+                "name": meta.get("name"),
+                "image_url": meta.get("image_url"),  # ✅ DB 컬럼명 반영
                 "location": {
-                    "lat": meta.get("latitude"),
-                    "lng": meta.get("longitude")
+                    "lat": loc.get("lat"),
+                    "lng": loc.get("lng")
                 },
-                "map_url": build_map_url(meta.get("name"), meta.get("latitude"), meta.get("longitude")),
+                "map_url": build_map_url(meta.get("name"), loc.get("lat"), loc.get("lng")),
                 "scores": {
                     "hybrid": r.get("hybrid_score"),
                     "similarity": r.get("similarity_score"),
