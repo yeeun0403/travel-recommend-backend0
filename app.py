@@ -354,33 +354,59 @@ def recommend():
             except Exception as e:
                 print("[WARN] user_tags 議고쉶 �ㅽ뙣:", e)
 
-        # 3) �낅젰 �곗꽑�쒖쐞 寃곗젙 (A 諛⑹떇: �ㅻЦ�쒓렇 �곗꽑)
-        # - free_text > tags > �ㅻЦ�쒓렇 > 紐낆떆�꾨뱶
+        # 3) 입력 우선순위 결정
+        data_for_model = {}
+        mode = "fallback"
+
+        # 우선순위 1: free_text가 있으면 그대로 사용
         if isinstance(body.get("free_text"), str) and body["free_text"].strip():
             data_for_model = {"free_text": body["free_text"].strip()}
             mode = "free_text"
 
+        # 우선순위 2: 카테고리별로 구분된 태그가 있으면 그대로 전달
+        elif any(body.get(k) for k in ['season', 'nature', 'vibe', 'target']):
+            data_for_model = {
+                k: body.get(k, [])
+                for k in ['season', 'nature', 'vibe', 'target']
+                if body.get(k)
+            }
+            mode = "categorized_tags"
+            print(f"[INFO] Categorized tags received: {data_for_model}")
+
+        # 우선순위 3: 단순 태그 리스트가 있으면 free_text로 변환
         elif isinstance(body.get("tags"), list) and body["tags"]:
             norm = [str(t).strip().lstrip("#").lower() for t in body["tags"] if str(t).strip()]
-            data_for_model = {"tags": norm}
-            mode = "tags"
+            # ✅ 수정: 태그를 free_text로 변환 (모델이 parse_free_text()로 자동 분류)
+            data_for_model = {"free_text": " ".join(norm)}
+            mode = "tags_as_text"
+            print(f"[INFO] Converting tags to free_text: {data_for_model}")
 
+        # 우선순위 4: DB에 저장된 설문 태그
         elif user_tags:
-            data_for_model = {"tags": user_tags}
+            # ✅ 수정: 설문 태그도 free_text로 변환
+            data_for_model = {"free_text": " ".join(user_tags)}
             mode = "survey"
+            print(f"[INFO] Using survey tags as free_text: {data_for_model}")
 
+        # 아무 입력도 없으면 빈 딕셔너리
         else:
             data_for_model = {}
             mode = "fallback"
 
-        # 4) 異붿쿇 �섑뻾
+        # ✅ 디버깅 로그 추가
+        print(f"[DEBUG] Mode: {mode}")
+        print(f"[DEBUG] data_for_model: {data_for_model}")
+
+
+        # 4) 추천 수
         result = recommender.recommend_places(data_for_model, top_k=3)
         recs = result.get("recommendations", [])[:3]
 
-        print("[DEBUG] recs raw:", recs)
-        print("[DEBUG] body:", body)
-        print("[DEBUG] body['tags']:", body.get("tags"), type(body.get("tags")))
-        print("[DEBUG] mode:", mode)
+        # ✅ 디버깅 로그 추가
+        print(f"[DEBUG] Number of recommendations: {len(recs)}")
+        if recs:
+            print(f"[DEBUG] First rec tag_score: {recs[0].get('tag_score')}")
+            
 
         # 5) travel_id 議댁옱 �뺤씤
         recs = [r for r in recs if r.get("travel_id") is not None]
