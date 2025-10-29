@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import yaml
+import ast
 from typing import Dict, List, Tuple
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -102,11 +103,18 @@ class GangwonPlaceRecommender:
 
         # 문자열/리스트 모두 대응하는 to_set
         def to_set(x):
-            if isinstance(x, list):
-                return set([str(i).strip().lower() for i in x if str(i).strip()])
-            if isinstance(x, str) and x.strip():
+        if isinstance(x, list):
+            return set([str(i).strip().lower() for i in x if str(i).strip()])
+
+        if isinstance(x, str) and x.strip():
+            try:
+                parsed = ast.literal_eval(x)  # 문자열 리스트 → 리스트 변환
+                if isinstance(parsed, list):
+                    return set([str(i).strip().lower() for i in parsed if str(i).strip()])
+            except:
                 return set([v.strip().lower() for v in x.split(",")])
-            return set()
+
+        return set()
 
         if parsed.get("nature"):
             u = set(parsed["nature"])
@@ -130,6 +138,12 @@ class GangwonPlaceRecommender:
             if u and p:
                 inter = len(u & p)
                 score += 0.2 * (inter / max(len(u), 1))
+
+        print("[DEBUG TAG] parsed:", parsed)
+        print("[DEBUG TAG] row.nature:", row.get("nature"))
+        print("[DEBUG TAG] row.vibe:", row.get("vibe"))
+        print("[DEBUG TAG] row.target:", row.get("target"))
+        print("[DEBUG TAG] score:", score)
 
         return score
 
@@ -158,6 +172,7 @@ class GangwonPlaceRecommender:
             tag_scores = tag_scores / tag_scores.max()
 
         hybrid = self.sim_w * sim + self.tag_w * tag_scores
+        
         return hybrid, sim, tag_scores
 
     # ---------- 최종 추천 ----------
