@@ -393,7 +393,7 @@ def recommend():
         travel_ids = [r["travel_id"] for r in recs]
         travel_docs = list(mongo.db.travels.find(
         {"travel_id": {"$in": travel_ids}},
-        {"_id": 0, "travel_id": 1, "name": 1,"image_urls": 1, "location": 1}
+        {"_id": 0, "travel_id": 1, "name": 1,"image_urls": 1, "location": 1, "latitude": 1, "longitude": 1}
             ))
         tmap = {d["travel_id"]: d for d in travel_docs}
 
@@ -413,11 +413,23 @@ def recommend():
             lat = loc.get("lat")
             lng = loc.get("lng")
 
-            # �� image_url 泥섎━
-            image_urls = meta.get("image_urls")
-            if not image_urls and meta.get("image_urls"):
-                urls = str(meta.get("image_urls")).split(",")
-                image_urls = urls[0].strip() if urls else None
+            raw = meta.get("image_urls")
+
+            # 1) 배열이면 그대로
+            if isinstance(raw, list):
+                image_urls = raw
+
+            # 2) 문자열이면 콤마 기준으로 나눔
+            elif isinstance(raw, str) and raw.strip():
+                image_urls = [url.strip() for url in raw.split(",")]
+
+            # 3) 단일 값 image_url만 있는 경우
+            elif meta.get("image_url"):
+                image_urls = [meta.get("image_url")]
+
+            # 4) 아무것도 없을 때
+            else:
+                image_urls = []
 
             enriched.append({
                 "travel_id": r["travel_id"],
