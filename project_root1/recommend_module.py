@@ -103,18 +103,18 @@ class GangwonPlaceRecommender:
 
         # 문자열/리스트 모두 대응하는 to_set
         def to_set(x):
-        if isinstance(x, list):
-            return set([str(i).strip().lower() for i in x if str(i).strip()])
+            if isinstance(x, list):
+                return set([str(i).strip().lower() for i in x if str(i).strip()])
 
-        if isinstance(x, str) and x.strip():
-            try:
-                parsed = ast.literal_eval(x)  # 문자열 리스트 → 리스트 변환
-                if isinstance(parsed, list):
-                    return set([str(i).strip().lower() for i in parsed if str(i).strip()])
-            except:
-                return set([v.strip().lower() for v in x.split(",")])
+            if isinstance(x, str) and x.strip():
+                try:
+                    parsed = ast.literal_eval(x)  # 문자열 리스트 → 리스트 변환
+                    if isinstance(parsed, list):
+                        return set([str(i).strip().lower() for i in parsed if str(i).strip()])
+                except:
+                    return set([v.strip().lower() for v in x.split(",")])
 
-        return set()
+            return set()
 
         if parsed.get("nature"):
             u = set(parsed["nature"])
