@@ -95,47 +95,44 @@ class GangwonPlaceRecommender:
        
         score = 0.0
 
-        # season
-        if parsed.get("season") and isinstance(row.get("season"), str):
-            # season은 문자열 비교(데이터에 '봄','여름' 같은 값이 있다고 가정)
-            if str(row["season"]).strip() == parsed["season"]:
-                score += 0.3
+    # season 비교는 동일
+    if parsed.get("season") and isinstance(row.get("season"), str):
+        if str(row["season"]).strip() == parsed["season"]:
+            score += 0.3
 
-        # list helper (소문자 기준 매칭)
-        def to_set(x):
-            if isinstance(x, list):
-                return set([str(i).strip().lower() for i in x if str(i).strip()])
-            return set()
+    # 문자열/리스트 모두 대응하는 to_set
+    def to_set(x):
+        if isinstance(x, list):
+            return set([str(i).strip().lower() for i in x if str(i).strip()])
+        if isinstance(x, str) and x.strip():
+            return set([v.strip().lower() for v in x.split(",")])
+        return set()
 
-        # nature
-        if parsed["nature"]:
-            u = set(parsed["nature"])
-            p = to_set(row.get("nature_list"))
-            if u and p:
-                inter = len(u & p)
-                union = len(u | p) or 1
-                jacc = inter / union
-                score += 0.25 * jacc
+    if parsed.get("nature"):
+        u = set(parsed["nature"])
+        p = to_set(row.get("nature"))   
+        if u and p:
+            inter = len(u & p)
+            union = len(u | p) or 1
+            score += 0.25 * (inter / union)
 
-        # vibe
-        if parsed["vibe"]:
-            u = set(parsed["vibe"])
-            p = to_set(row.get("vibe_list"))
-            if u and p:
-                inter = len(u & p)
-                union = len(u | p) or 1
-                jacc = inter / union
-                score += 0.25 * jacc
+    if parsed.get("vibe"):
+        u = set(parsed["vibe"])
+        p = to_set(row.get("vibe")) 
+        if u and p:
+            inter = len(u & p)
+            union = len(u | p) or 1
+            score += 0.25 * (inter / union)
 
-        # target
-        if parsed["target"]:
-            u = set(parsed["target"])
-            p = to_set(row.get("target_list"))
-            if u and p:
-                inter = len(u & p)
-                score += 0.2 * (inter / max(len(u), 1))
+    if parsed.get("target"):
+        u = set(parsed["target"])
+        p = to_set(row.get("target"))   
+        if u and p:
+            inter = len(u & p)
+            score += 0.2 * (inter / max(len(u), 1))
 
-        return score
+    return score
+
 
     def _calc_hybrid(self, parsed: Dict) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         # similarity
