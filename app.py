@@ -463,12 +463,12 @@ def recommend():
             enriched.append({
                 "travel_id": r["travel_id"],
                 "name": meta.get("name"),
-                "image_urls": meta.get("image_urls"),  # �� DB 而щ읆紐� 諛섏쁺
+                "image_urls": image_urls,
                 "location": {
                     "lat": lat,
                     "lng": lng
                 },
-                "map_url": build_map_url(meta.get("name"), loc.get("lat"), loc.get("lng")),
+                "map_url": build_map_url(meta.get("name"), lat, lng),
                 "scores": {
                     "hybrid": r.get("hybrid_score"),
                     "similarity": r.get("similarity_score"),
