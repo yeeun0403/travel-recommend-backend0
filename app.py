@@ -398,14 +398,17 @@ def recommend():
         print(f"[DEBUG] data_for_model: {data_for_model}")
 
 
-        # 4) 추천 수
+        # 4) 추천 수행
         result = recommender.recommend_places(data_for_model, top_k=3)
         recs = result.get("recommendations", [])[:3]
 
-        # ✅ 디버깅 로그 추가
+        # 디버깅 로그
         print(f"[DEBUG] Number of recommendations: {len(recs)}")
         if recs:
             print(f"[DEBUG] First rec tag_score: {recs[0].get('tag_score')}")
+        #상위 결과 비교(최대 10개)
+        for idx, r in enumerate(recs[:10]):  # 상위 10개만
+            print("[DEBUG TOP] travel_id:", r["travel_id"], "tag_score:", r["tag_score"])
             
 
         # 5) travel_id 議댁옱 �뺤씤

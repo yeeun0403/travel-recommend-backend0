@@ -50,37 +50,100 @@ class GangwonPlaceRecommender:
         """모델 내부는 소문자로 처리, DF의 리스트 항목도 소문자로 맞춘 상태라는 가정 권장."""
         return self._normalize_tags(items)
 
+
+    def _extract_tags_from_text(self, text: str) -> Dict[str, List[str]]:
+        """
+        free_text에 포함된 단어를 기반으로 nature / vibe / target을 추출
+        self.tag_mapping을 사용하여 부분 문자열 매
+        """
+        txt = (text or "").strip().lower()
+        nature, vibe, target = set(), set(), set()
+
+
+        # (선택) 동의어/치환어 사전 - 필요한 것만 추가해
+        synonyms = {
+            "바다": ["해변", "바닷가"],
+            "계곡": ["물놀이"],
+            "사진명소": ["포토스팟", "인생샷"],
+            "조용한": ["한적", "조용"],
+            "힐링": ["치유", "휴식"],
+        }
+
+        def match_any(keyword: str) -> bool:
+            
+            # 기본 키워드 포함 매칭
+            if keyword in txt:
+                return True
+            
+            # 동의어 포함 매칭
+            for syn in synonyms.get(keyword, []):
+                if syn in txt:
+                    return True
+                
+            return False
+
+        for kw in self.tag_mapping.get("nature", []):
+            if match_any(kw):
+                nature.add(kw)
+
+        for kw in self.tag_mapping.get("vibe", []):
+            if match_any(kw):
+                vibe.add(kw)
+
+        for kw in self.tag_mapping.get("target", []):
+            if match_any(kw):
+                target.add(kw)
+
+        return {
+            "nature": list(nature),
+            "vibe": list(vibe),
+            "target": list(target),
+        }
+    
+
     def parse_user_input(self, user_input: Dict) -> Dict:
         """
         지원 입력:
-        - {"free_text": "..."}  → 자유문장
+        - {"free_text": "..."}  → 자유문장 + 여기서도 태그 추출 (방법 1)
         - {"tags": [...] }      → 범용 해시태그(자연/분위기/대상에 동일반영)
         - {"season": "...", "nature":[...], "vibe":[...], "target":[...]} → 명시
         """
         if not user_input:
             return {"free_text": None, "season": None, "nature": [], "vibe": [], "target": []}
 
-        # free_text 최우선
+        # 1) free_text 최우선 + free_text에서도 태그 추출(방법 1)
         if isinstance(user_input.get("free_text"), str) and user_input["free_text"].strip():
+            text = user_input["free_text"].strip()
+            extracted = self._extract_tags_from_text(text)
+            # ⬇️ normalize(소문자, 중복 제거)는 기존 헬퍼 재사용
+            nature = self._to_cased_tags(extracted.get("nature", []))
+            vibe   = self._to_cased_tags(extracted.get("vibe", []))
+            target = self._to_cased_tags(extracted.get("target", []))
+
+            # 디버그 로그
+            print("[DEBUG PARSE] free_text:", text)
+            print("[DEBUG PARSE] extracted:", extracted)
+
             return {
-                "free_text": user_input["free_text"].strip(),
+                "free_text": text,
                 "season": None,
-                "nature": [],
-                "vibe": [],
-                "target": []
+                "nature": nature,
+                "vibe": vibe,
+                "target": target
             }
 
-        # generic tags → nature/vibe/target 모두에 반영
+        # 2) generic tags → nature/vibe/target 모두에 반영
         if isinstance(user_input.get("tags"), list) and user_input["tags"]:
             norm = self._to_cased_tags(user_input["tags"])
             return {"free_text": None, "season": None, "nature": norm, "vibe": norm, "target": norm}
 
-        # 명시적 필드
+        # 3) 명시적 필드
         season = user_input.get("season")
         nature = self._to_cased_tags(user_input.get("nature", []))
-        vibe = self._to_cased_tags(user_input.get("vibe", []))
+        vibe   = self._to_cased_tags(user_input.get("vibe", []))
         target = self._to_cased_tags(user_input.get("target", []))
         return {"free_text": None, "season": season, "nature": nature, "vibe": vibe, "target": target}
+
 
     # ---------- 점수 계산 ----------
     def _calc_similarity(self, query_text: str) -> np.ndarray:
@@ -138,13 +201,7 @@ class GangwonPlaceRecommender:
             if u and p:
                 inter = len(u & p)
                 score += 0.2 * (inter / max(len(u), 1))
-
-        print("[DEBUG TAG] parsed:", parsed)
-        print("[DEBUG TAG] row.nature:", row.get("nature"))
-        print("[DEBUG TAG] row.vibe:", row.get("vibe"))
-        print("[DEBUG TAG] row.target:", row.get("target"))
-        print("[DEBUG TAG] score:", score)
-
+                
         return score
 
 
