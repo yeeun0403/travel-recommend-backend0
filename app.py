@@ -117,6 +117,9 @@ def mypage():
     cur = mongo.db.ratings.find({"user_id": current_user_id}).sort("updated_at", -1)
     rating_list = list(cur)
 
+    # travel_id 목록 추출
+    travel_ids = [r.get("travel_id") for r in rating_list if r.get("travel_id")]
+
     # 여행지 메타 조인 (추가된 필드 포함)
     travel_docs = list(mongo.db.travels.find(
         {"travel_id": {"$in": travel_ids}},
