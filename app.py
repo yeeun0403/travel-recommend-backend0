@@ -540,7 +540,7 @@ def toggle_bookmark(travel_id):
             "tags": [],  # 초기엔 태그 없음
             "created_at": datetime.datetime.utcnow()
         })
-        return jsonify({"status": "bookmarked", "travel_id": travel_id}), 201
+        return jsonify({"status": "bookmarked", "travel_id": travel_id}), 200
 
 
 # 북마크 한 여행지 목록 확
